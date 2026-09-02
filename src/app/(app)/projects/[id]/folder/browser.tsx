@@ -25,10 +25,8 @@ import {
   createFileRecord,
   getFileDownloadUrl,
   getTabContents,
-  getTabCounts,
   moveBlockToPosition,
   moveFolderToPosition,
-  searchTabSubtree,
 } from "./actions";
 import { DocumentIcon, GripIcon, PlayIcon, UploadIcon } from "./item-icon";
 import { RenameDialog } from "./rename-dialog";
@@ -36,78 +34,49 @@ import { MoveDialog } from "./move-dialog";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { FolderFormDialog } from "./folder-form-dialog";
 import { BlockFormDialog } from "./block-form-dialog";
-import { AnimatedPanel, DividerGripHandle, DividerRow } from "./divider-row";
 
-// A sub-tab is fully interleaved with this level's own blocks in one
-// ordered stream — both folders.sort_order and blocks.sort_order are the
-// same fractional-index space (src/lib/sort-order.ts), so a dragged item
-// slots in by comparing sort_order directly regardless of which table it
-// came from. Consecutive image blocks (2+) still collapse into one photo
-// grid; a sub-tab breaks a run of images the same way any other non-image
-// block always did.
+// This level's own block stream — Sub-tabs no longer render inline here
+// (they live exclusively in the persistent left sidebar; see
+// project-sidebar.tsx), so a stream item is always either a single block or
+// a run of 2+ consecutive image blocks collapsed into one photo grid.
 type StreamItem =
-  | { kind: "folder"; folder: FolderRow }
   | { kind: "block"; block: BlockRow }
   | { kind: "images"; blocks: BlockRow[] };
 
-function buildStream(folders: FolderRow[], blocks: BlockRow[]): StreamItem[] {
-  const tagged: (
-    | { sortOrder: number; folder: FolderRow; block?: undefined }
-    | { sortOrder: number; block: BlockRow; folder?: undefined }
-  )[] = [
-    ...folders.map((folder) => ({ sortOrder: folder.sort_order, folder }) as const),
-    ...blocks.map((block) => ({ sortOrder: block.sort_order, block }) as const),
-  ].sort((a, b) => a.sortOrder - b.sortOrder);
-
+// blocks arrives pre-ordered by sort_order, so this only needs to walk it
+// once, grouping consecutive image runs — no merge/sort step needed now
+// that Sub-tabs aren't part of the stream.
+function buildStream(blocks: BlockRow[]): StreamItem[] {
   const items: StreamItem[] = [];
   let i = 0;
-  while (i < tagged.length) {
-    const entry = tagged[i];
-    if (entry.folder) {
-      items.push({ kind: "folder", folder: entry.folder });
-      i++;
-      continue;
-    }
-    if (entry.block.type === "image") {
+  while (i < blocks.length) {
+    if (blocks[i].type === "image") {
       const run: BlockRow[] = [];
-      while (i < tagged.length && tagged[i].block?.type === "image") {
-        run.push(tagged[i].block!);
+      while (i < blocks.length && blocks[i].type === "image") {
+        run.push(blocks[i]);
         i++;
       }
       items.push(run.length >= 2 ? { kind: "images", blocks: run } : { kind: "block", block: run[0] });
       continue;
     }
-    items.push({ kind: "block", block: entry.block });
+    items.push({ kind: "block", block: blocks[i] });
     i++;
   }
   return items;
 }
 
 function firstSortOrder(item: StreamItem): number {
-  if (item.kind === "folder") return item.folder.sort_order;
   if (item.kind === "block") return item.block.sort_order;
   return item.blocks[0].sort_order;
 }
 function lastSortOrder(item: StreamItem): number {
-  if (item.kind === "folder") return item.folder.sort_order;
   if (item.kind === "block") return item.block.sort_order;
   return item.blocks[item.blocks.length - 1].sort_order;
 }
 function streamKey(item: StreamItem): string {
-  if (item.kind === "folder") return `folder-${item.folder.id}`;
   if (item.kind === "block") return item.block.id;
   return `images-${item.blocks[0].id}`;
 }
-
-// The result of a recursive "search this tab" — computed once, at whichever
-// FolderBrowser instance currently owns a non-empty query, then threaded
-// unchanged down through every nested instance via inheritedMatches so a
-// match anywhere in the subtree stays visible without each level re-fetching.
-type SearchMatches = {
-  visibleFolderIds: Set<string>;
-  openFolderIds: Set<string>;
-  blockIds: Set<string>;
-};
 
 type UploadItem = {
   id: string;
@@ -116,26 +85,27 @@ type UploadItem = {
   error: string | null;
 };
 
-// The open notebook page for one Tab or Sub-tab: search, sub-tabs (rendered
-// as nested vertical divider cards, expanding in place — sub-tabs are fully
-// optional and recursive, so this component just renders another instance
-// of itself for whichever child is open), and this level's own block
-// stream — text and file blocks, freely interleaved in the user's own
+// The Main Canvas's content for one Tab, Sub-tab, or the virtual Unsorted
+// view: a compact header (name/index/search/"+ Add"/rename/delete), then
+// this level's own block stream — text and file blocks, in the user's own
 // order — with a Jupyter-style hover insert-bar between blocks and
-// drag-and-drop reordering via each block's grip handle.
+// drag-and-drop reordering via each block's grip handle. Always the canvas
+// ROOT (the only caller is binder-workspace.tsx): Tab/Sub-tab structure and
+// navigation live entirely in the persistent left sidebar
+// (project-sidebar.tsx), not here, so this component never renders another
+// instance of itself.
 //
-// Self-fetching rather than receiving content as props: every level (the
-// project root's Unsorted view, a top-level Tab, or any depth of Sub-tab)
-// fetches its own {folders, blocks} via getTabContents, so recursion is
-// just this component rendering itself again — no centralized multi-level
-// cache needed.
+// Self-fetching rather than receiving content as props: reuses the same
+// getTabContents RPC the sidebar's own lazy-expand and binder-workspace's
+// top-level list already call, ignoring its `folders` field — this level
+// only cares about its own blocks.
 export function FolderBrowser({
   projectId,
   userId,
   folderId,
   indexPath,
+  name,
   onItemsChanged,
-  inheritedMatches = null,
   editable,
 }: {
   projectId: string;
@@ -144,20 +114,19 @@ export function FolderBrowser({
   // blocks, no real folder to hold sub-tabs) — every real Tab/Sub-tab has a
   // real id.
   folderId: string | null;
-  // This level's own displayed index ("01", "01.1", "01.1.2", ...) — the
-  // prefix used when numbering this level's children.
+  // This level's own displayed index ("01", "01.1", ...) shown in the
+  // header — binder-workspace computes it (see its own comment on the
+  // deep-linked-Sub-tab simplification).
   indexPath: string;
+  // This level's own name for the header — null only when binder-workspace
+  // hasn't been able to resolve it yet (a hard reload straight into a
+  // deep-linked Sub-tab); the header falls back to a placeholder then.
+  name: string | null;
   // Called after any mutation at this level, so the parent can refresh the
   // count badge it shows for this folder. Never needs to bubble further
   // than one level: counts are direct-children-only, so a change inside a
   // sub-tab never affects its grandparent's badge.
   onItemsChanged?: () => void;
-  // Set by a parent that's currently searching (its own local query is
-  // non-empty) and found this folder is on the path to a match — this
-  // level then uses the SAME match set for its own filtering/force-open
-  // instead of running its own search, and passes it on unchanged to its
-  // own children. null everywhere outside an active ancestor search.
-  inheritedMatches?: SearchMatches | null;
   // View Mode vs Edit Mode (project-page-level toggle, threaded straight
   // down): false hides every insert bar, drag handle, and edit/rename/
   // move/delete affordance at every level, leaving a clean read-only
@@ -171,12 +140,9 @@ export function FolderBrowser({
     blocks: BlockRow[];
     imageUrls: Record<string, string>;
   } | null>(null);
-  const [counts, setCounts] = useState<Record<string, number>>({});
   const [isLoading, startTransition] = useTransition();
-  const [openChildIds, setOpenChildIds] = useState<Set<string>>(new Set());
 
   const [query, setQuery] = useState("");
-  const [ownMatches, setOwnMatches] = useState<SearchMatches | null>(null);
   const [queue, setQueue] = useState<UploadItem[]>([]);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [draggingItem, setDraggingItem] = useState<DragPayload | null>(null);
@@ -185,17 +151,8 @@ export function FolderBrowser({
 
   const fetchSelf = useCallback(() => {
     startTransition(async () => {
-      const [result, countsResult] = await Promise.all([
-        getTabContents(projectId, folderId),
-        getTabCounts(projectId),
-      ]);
+      const result = await getTabContents(projectId, folderId);
       setData(result);
-      setCounts(countsResult);
-      // A deleted-or-renamed-away child shouldn't stay "open".
-      setOpenChildIds((ids) => {
-        const next = new Set([...ids].filter((id) => result.folders.some((f) => f.id === id)));
-        return next.size === ids.size ? ids : next;
-      });
     });
   }, [projectId, folderId]);
 
@@ -208,88 +165,26 @@ export function FolderBrowser({
     onItemsChanged?.();
   }
 
-  function toggleChild(id: string) {
-    setOpenChildIds((ids) => {
-      const next = new Set(ids);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  function handleQueryChange(next: string) {
+    setQuery(next);
   }
 
-  // Unsorted has no sub-tab concept of its own — getTabContents(null)
-  // returns the top-level Tabs as "folders" (used elsewhere to render/
-  // refresh the tab strip), which would be nonsensical rendered here too.
-  const folders = useMemo(
-    () => (isUnsorted ? [] : (data?.folders ?? [])),
-    [isUnsorted, data]
-  );
   const blocks = useMemo(() => data?.blocks ?? [], [data]);
   const imageUrls = data?.imageUrls ?? {};
 
   const trimmedQuery = query.trim();
-  // Unsorted can never hold sub-tabs, so its own search box only ever needs
-  // a plain, instant, direct-children substring filter — no recursion, no
-  // server round trip.
-  const usingOwnSearch = trimmedQuery !== "" && !isUnsorted;
-  const isFiltering = isUnsorted ? trimmedQuery !== "" : usingOwnSearch || inheritedMatches !== null;
-  const activeMatches = usingOwnSearch ? ownMatches : inheritedMatches;
-  const isSearchPending = usingOwnSearch && ownMatches === null;
-
-  // Recursive subtree search — debounced, and only for the level currently
-  // owning a non-empty local query (a level receiving inheritedMatches just
-  // reuses that, no fetch of its own). Re-runs after any refetch of this
-  // level's own content too, so a rename/delete made mid-search doesn't
-  // leave stale match ids behind.
-  useEffect(() => {
-    if (!usingOwnSearch) return;
-    let cancelled = false;
-    const handle = setTimeout(() => {
-      searchTabSubtree(projectId, folderId as string, trimmedQuery).then((result) => {
-        if (cancelled) return;
-        setOwnMatches({
-          visibleFolderIds: new Set(result.visibleFolderIds),
-          openFolderIds: new Set(result.openFolderIds),
-          blockIds: new Set(result.blockIds),
-        });
-      });
-    }, 250);
-    return () => {
-      cancelled = true;
-      clearTimeout(handle);
-    };
-  }, [usingOwnSearch, trimmedQuery, projectId, folderId, data]);
-
-  const visibleFolders = useMemo(() => {
-    if (isUnsorted) return [];
-    if (!isFiltering) return folders;
-    if (!activeMatches) return [];
-    return folders.filter((f) => activeMatches.visibleFolderIds.has(f.id));
-  }, [isUnsorted, isFiltering, activeMatches, folders]);
-  // blocks arrives pre-ordered by sort_order. The insert-bar and
-  // drag-reorder both target real positions in that order, so they're only
-  // offered with no filter active — where visibleBlocks and blocks are the
-  // same list and gap math stays meaningful.
-  const visibleBlocks = useMemo(() => {
-    if (isUnsorted) return blocks.filter((b) => blockMatchesQuery(b, query));
-    if (!isFiltering) return blocks;
-    if (!activeMatches) return [];
-    return blocks.filter((b) => activeMatches.blockIds.has(b.id));
-  }, [isUnsorted, blocks, query, isFiltering, activeMatches]);
+  const isFiltering = trimmedQuery !== "";
+  // A plain, instant, direct-children substring filter — no recursion, no
+  // server round trip, since a Sub-tab's own content never shows here.
+  const visibleBlocks = useMemo(
+    () => (isFiltering ? blocks.filter((b) => blockMatchesQuery(b, trimmedQuery)) : blocks),
+    [blocks, trimmedQuery, isFiltering]
+  );
   const canReorder = editable && !isFiltering;
-  const items = useMemo(() => buildStream(visibleFolders, visibleBlocks), [visibleFolders, visibleBlocks]);
-  // "01.1", "01.2", ... count only sub-tabs in stream order — blocks don't
-  // carry a number, so a sub-tab's dotted index is unaffected by which
-  // blocks happen to sit before/after it.
-  const folderIndex = useMemo(() => {
-    const map = new Map<string, number>();
-    let n = 0;
-    for (const item of items) if (item.kind === "folder") map.set(item.folder.id, ++n);
-    return map;
-  }, [items]);
+  const items = useMemo(() => buildStream(visibleBlocks), [visibleBlocks]);
 
-  const isEmpty = folders.length === 0 && blocks.length === 0;
-  const hasResults = visibleFolders.length + visibleBlocks.length > 0;
+  const isEmpty = blocks.length === 0;
+  const hasResults = visibleBlocks.length > 0;
 
   function updateItem(id: string, patch: Partial<UploadItem>) {
     setQueue((q) => q.map((it) => (it.id === id ? { ...it, ...patch } : it)));
@@ -390,24 +285,47 @@ export function FolderBrowser({
         isDraggingFile ? "border-stone-300 bg-stone-50" : "border-transparent"
       }`}
     >
-      <input
-        type="search"
-        value={query}
-        onChange={(e) => {
-          const next = e.target.value;
-          setQuery(next);
-          // Clearing the box drops stale matches immediately rather than
-          // waiting on the debounced effect, which only fires while a
-          // query is actually non-empty.
-          if (next.trim() === "") setOwnMatches(null);
-        }}
-        placeholder="Search this tab"
-        className="block w-full rounded-md border border-stone-300 px-3 py-1.5 text-sm shadow-sm focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500 sm:max-w-xs"
-      />
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          {indexPath && (
+            <span className="shrink-0 font-mono text-xs tracking-wider text-stone-400">
+              {indexPath}
+            </span>
+          )}
+          <h2 className="truncate text-lg font-semibold tracking-tight text-stone-900">
+            {name ?? "Untitled tab"}
+          </h2>
+        </div>
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
+          <SearchBox
+            query={query}
+            onQueryChange={handleQueryChange}
+            className="block w-full rounded-md border border-stone-300 px-3 py-1.5 text-sm shadow-sm focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500 sm:w-40"
+          />
+          {editable && (
+            <>
+              <AddMenu
+                projectId={projectId}
+                folderId={folderId}
+                isUnsorted={isUnsorted}
+                onUploadFiles={() => pickAndUploadFiles()}
+                onSuccess={refresh}
+              />
+              {folderId && (
+                <RenameDialog
+                  kind="folder"
+                  itemId={folderId}
+                  projectId={projectId}
+                  currentName={name ?? ""}
+                  onSuccess={refresh}
+                />
+              )}
+            </>
+          )}
+        </div>
+      </div>
 
-      {isSearchPending ? (
-        <p className="py-12 text-center text-sm text-stone-400">Searching…</p>
-      ) : !hasResults ? (
+      {!hasResults ? (
         isEmpty ? (
           <div className="flex flex-col items-center gap-4 py-16 text-center">
             <div>
@@ -482,74 +400,10 @@ export function FolderBrowser({
               drag gesture (the pointer is still over the card it just
               started dragging), and the resulting setState/re-render can
               abort the native drag entirely in Chrome/Safari. Reordering
-              lives entirely in the BlockGap/DividerDropZone strip between
-              items instead — the same pattern the top-level tab list in
-              binder-workspace.tsx already used, and the reason it never had
-              this problem. */}
+              lives entirely in the BlockGap strip between items instead. */}
           {items.map((item, i) => (
             <Fragment key={streamKey(item)}>
-              {item.kind === "folder" ? (
-                (() => {
-                  const folder = item.folder;
-                  const isOpen =
-                    openChildIds.has(folder.id) || (activeMatches?.openFolderIds.has(folder.id) ?? false);
-                  return (
-                    <div>
-                      <DividerRow
-                        index={`${indexPath}.${folderIndex.get(folder.id)}`}
-                        name={folder.name}
-                        count={counts[folder.id] ?? 0}
-                        isOpen={isOpen}
-                        onToggle={() => toggleChild(folder.id)}
-                        grip={
-                          canReorder ? (
-                            <DividerGripHandle
-                              onDragStart={(e) => {
-                                setDragPayload(e, { kind: "folder", id: folder.id });
-                                setDraggingItem({ kind: "folder", id: folder.id });
-                              }}
-                              onDragEnd={() => setDraggingItem(null)}
-                            />
-                          ) : undefined
-                        }
-                        actions={
-                          editable ? (
-                            <>
-                              <RenameDialog
-                                kind="folder"
-                                itemId={folder.id}
-                                projectId={projectId}
-                                currentName={folder.name}
-                                onSuccess={refresh}
-                              />
-                              <DeleteItemDialog
-                                kind="folder"
-                                itemId={folder.id}
-                                projectId={projectId}
-                                itemName={folder.name}
-                                onSuccess={refresh}
-                              />
-                            </>
-                          ) : undefined
-                        }
-                      />
-                      <AnimatedPanel isOpen={isOpen}>
-                        {isOpen && (
-                          <FolderBrowser
-                            projectId={projectId}
-                            userId={userId}
-                            folderId={folder.id}
-                            indexPath={`${indexPath}.${folderIndex.get(folder.id)}`}
-                            onItemsChanged={refresh}
-                            inheritedMatches={activeMatches}
-                            editable={editable}
-                          />
-                        )}
-                      </AnimatedPanel>
-                    </div>
-                  );
-                })()
-              ) : item.kind === "block" ? (
+              {item.kind === "block" ? (
                 <BlockItem
                   projectId={projectId}
                   block={item.block}
@@ -642,6 +496,123 @@ export function FolderBrowser({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+function SearchBox({
+  query,
+  onQueryChange,
+  className,
+}: {
+  query: string;
+  onQueryChange: (next: string) => void;
+  className?: string;
+}) {
+  return (
+    <input
+      type="search"
+      value={query}
+      onChange={(e) => onQueryChange(e.target.value)}
+      placeholder="Search this tab"
+      className={
+        className ??
+        "block rounded-md border border-stone-300 px-3 py-1.5 text-sm shadow-sm focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500"
+      }
+    />
+  );
+}
+
+// The canvas header's "+ Add" control — a compact menu instead of three
+// always-visible buttons, so the header stays a single tidy row. Each item
+// reuses the exact same trigger components as the hover insert-bar
+// (BlockGap) and the empty-state actions below, just restyled as menu rows.
+function AddMenu({
+  projectId,
+  folderId,
+  isUnsorted,
+  onUploadFiles,
+  onSuccess,
+}: {
+  projectId: string;
+  folderId: string | null;
+  isUnsorted: boolean;
+  onUploadFiles: () => void;
+  onSuccess: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const itemClassName =
+    "block w-full px-3 py-2 text-left text-sm text-stone-700 transition-colors hover:bg-stone-50";
+
+  // Closing the menu the instant a trigger is clicked would unmount
+  // BlockFormDialog/FolderFormDialog before their own native <dialog> ever
+  // gets a chance to render — the menu only closes once whichever dialog
+  // actually succeeds (its own Cancel/backdrop-click close the *dialog*
+  // without touching this menu, which is a harmless, rare rough edge: it
+  // can be left open behind a since-cancelled dialog until the next click).
+  function handleSuccess() {
+    setOpen(false);
+    onSuccess();
+  }
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
+      >
+        + Add
+      </button>
+      {open && (
+        <>
+          {/* Full-screen invisible backdrop, behind the panel — the only
+              purpose is closing the menu on an outside click. */}
+          <button
+            type="button"
+            aria-label="Close menu"
+            tabIndex={-1}
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 z-10 cursor-default"
+          />
+          <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-stone-200 bg-white py-1 shadow-lg">
+            <BlockFormDialog
+              projectId={projectId}
+              sectionId={folderId}
+              mode="create"
+              kind="text"
+              dialogTitle="New text block"
+              placeholder="Write anything worth remembering about this tab…"
+              submitLabel="Add block"
+              triggerLabel="Text Note"
+              triggerClassName={itemClassName}
+              onSuccess={handleSuccess}
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                onUploadFiles();
+              }}
+              className={itemClassName}
+            >
+              Upload File
+            </button>
+            {!isUnsorted && (
+              <FolderFormDialog
+                projectId={projectId}
+                parentFolderId={folderId}
+                triggerLabel="Sub-tab"
+                triggerClassName={itemClassName}
+                dialogTitle="New sub-tab"
+                namePlaceholder="Hardware"
+                submitLabel="Add sub-tab"
+                onSuccess={handleSuccess}
+              />
+            )}
+          </div>
+        </>
       )}
     </div>
   );

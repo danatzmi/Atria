@@ -107,7 +107,27 @@
 
   ### Current State
 
-  • Phases 1–5 complete. Word-grade editor, recursive tabs, View/Edit toggle, and paginated PDF export are fully built and tested.
+  • Phases 1–5 (MVP feature set) complete. Word-grade editor, recursive tabs, View/Edit toggle, and paginated PDF export are fully built and tested.
+  • **UI/UX Redesign complete** — the project workspace (`/projects/[id]`) moved from a single-column accordion stack of top-level Tabs to a persistent
+      Two-Column Project Shell:
+      • **Two-Column Shell**: a slim top nav bar (← Projects, title, View/Edit toggle, Export PDF, project Edit/Delete) replaced the old header's large
+      cover banner; `binder-workspace.tsx` now renders a permanent left sidebar beside a Main Canvas instead of an accordion.
+      • **Persistent Sidebar with Drag-and-Drop & Nesting** (new `project-sidebar.tsx`): an Overview item, a recursive Tab/Sub-tab tree (lazily
+      self-fetching each node's children only when expanded, reusing `getTabContents`/`getTabCounts`), and the virtual Unsorted row. Every row is
+      draggable and doubles as a drop target — dropping between siblings reorders (`moveFolderToParent` with a fractional `sort_order`, new server
+      action in `folder/actions.ts`), dropping directly onto a row reparents the dragged Tab as that row's last child (same action, cycle-checked via
+      `getFolderDescendantIds` so a Tab can never be dropped into its own subtree). Rename/Delete live inline per row (hover-revealed).
+      • **Project Overview Canvas**: the Main Canvas's default view (no Tab selected) — cover banner, name, description, then either the calm
+      "This is your project's home" invitation with a primary "+ Add Tab" action (zero Tabs) or an editorial grid of every top-level Tab (index, name,
+      item count) that jumps straight into the canvas on click.
+      • **Compact Tab Header** (`folder/browser.tsx`): when `FolderBrowser` is the canvas's root content (a `name` prop is passed — omitted for a
+      nested Sub-tab, which still gets its header from its own `DividerRow`), it renders a slim header — dotted index + Tab name on the left, a search
+      box + a new "+ Add" popover menu (Text Note / Upload File / Sub-tab) + Rename/Delete on the right — with a `border-b` drop line straight into the
+      content stream below.
+      • **Mobile Drawer** (`<768px`): a `[ ☰ Tabs ]` toggle in a mobile-only bar above the canvas opens `ProjectSidebar` as a slide-out drawer with a
+      backdrop (one shared sidebar instance for both desktop and mobile — not a duplicate — so a node's expand state isn't lost across the
+      breakpoint); selecting any Tab or Overview in the drawer navigates and closes it. Canvas padding scales `p-4 sm:p-6 md:p-8`, and the compact tab
+      header wraps its search/action cluster onto its own row below 640px.
   • Milestone 5.1 (Block Drag-and-Drop Polish) complete:
       • Grip handle event suppression fix: `<button draggable>` → `<div role="button" draggable>` — WebKit/Chromium intercept mousedown on native
       buttons for press-state handling, which swallowed `dragstart` before a real mouse drag could start.
@@ -138,14 +158,16 @@
       photo grid, attachment register, Note-callout exclusion all correct) → project deletion, with storage-bucket cleanup confirmed directly in
       Supabase Studio (the project's storage folder verified present before deletion and completely gone after, alongside the two real projects'
       folders, which were untouched).
-  • All 61 automated tests pass.
+  • All 66 automated tests pass.
 
   ### Immediate Next Tasks for the Next Session
 
   1. Manually verify PDF export pagination in real Chrome and Safari print previews (see above — outside what automation can check here).
-  2. Manually verify the Milestone 5.2 responsive fixes in an actual narrow viewport/device — the browser automation's resize_window tool did not
-      change the rendered viewport in this environment (window.innerWidth stayed fixed across repeated attempts), so those fixes are verified by
-      code/CSS analysis and a desktop-width regression check only, not by seeing the actual mobile layout.
+  2. The Mobile Drawer (UI/UX Redesign, above) was live-verified this session at both a phone width (390×844) and a desktop width (1024×700) with
+      real interaction — drawer open/close, tab selection, and the compact tab header's wrap-to-two-rows all confirmed working. `resize_window`
+      still doesn't change the tab's actual rendered viewport in this environment; the workaround that worked is embedding the page in a same-origin
+      `<iframe>` sized to the target viewport (Tailwind's breakpoints respond to the iframe's own dimensions) and driving it via
+      `iframe.contentDocument`/`contentWindow`. Worth reusing for the still-unverified Milestone 5.2 fixes and any future responsive work.
 
   ──────
   ## 9. Critical Warnings for the Reviewer

@@ -3,9 +3,7 @@ import { Suspense } from "react";
 import { createSignedUrl } from "@/lib/supabase/storage";
 import { getProjectOrNotFound } from "./data";
 import { getTabContents, getTabCounts } from "./folder/actions";
-import { CoverImageDialog } from "./cover-image-dialog";
 import { ProjectFormDialog } from "../project-form-dialog";
-import { DeleteProjectDialog } from "../delete-project-dialog";
 import { BinderWorkspace } from "./binder-workspace";
 import { ViewModeToggle } from "./view-mode-toggle";
 
@@ -33,59 +31,18 @@ export default async function ProjectHomePage(
   ]);
 
   return (
-    <div className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
-      <Link
-        href="/projects"
-        className="text-sm text-zinc-500 transition-colors hover:text-zinc-900"
-      >
-        ← Projects
-      </Link>
-
-      <div className="relative mt-4 aspect-[3/1] w-full overflow-hidden rounded-xl bg-zinc-100">
-        {coverImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={coverImageUrl}
-            alt=""
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full w-full items-center justify-center">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-              className="h-12 w-12 text-zinc-300"
-            >
-              <path d="M3.75 4.5A1.5 1.5 0 0 1 5.25 3h4.19c.398 0 .78.158 1.06.44l1.31 1.31c.281.281.663.44 1.06.44h6.128a1.5 1.5 0 0 1 1.5 1.5v.75H3.75V4.5Z" />
-              <path
-                fillRule="evenodd"
-                d="M2.25 9.75a.75.75 0 0 1 .75-.75h18a.75.75 0 0 1 .75.75v8.25a1.5 1.5 0 0 1-1.5 1.5H3.75a1.5 1.5 0 0 1-1.5-1.5V9.75Z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </div>
-        )}
-        {!isViewMode && (
-          <div className="absolute bottom-3 right-3">
-            <CoverImageDialog
-              projectId={project.id}
-              hasCoverImage={!!project.cover_image}
-            />
-          </div>
-        )}
-      </div>
-
-      <div className="mt-5 flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
+    <div className="flex w-full flex-1 flex-col">
+      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-zinc-200 px-6 py-4">
+        <div className="flex min-w-0 items-center gap-4">
+          <Link
+            href="/projects"
+            className="shrink-0 text-sm text-zinc-500 transition-colors hover:text-zinc-900"
+          >
+            ← Projects
+          </Link>
+          <h1 className="truncate text-lg font-semibold tracking-tight text-zinc-900">
             {project.name}
           </h1>
-          {project.description && (
-            <p className="mt-1 max-w-2xl text-sm text-zinc-500">
-              {project.description}
-            </p>
-          )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <ViewModeToggle />
@@ -111,30 +68,23 @@ export default async function ProjectHomePage(
                 />
               </svg>
             </Link>
-            {!isViewMode && (
-              <>
-                <ProjectFormDialog mode="edit" project={project} />
-                <DeleteProjectDialog
-                  projectId={project.id}
-                  projectName={project.name}
-                />
-              </>
-            )}
+            {!isViewMode && <ProjectFormDialog mode="edit" project={project} />}
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="mt-10">
-        <Suspense fallback={null}>
-          <BinderWorkspace
-            projectId={project.id}
-            userId={user!.id}
-            initialTabs={tabs}
-            initialTabCounts={tabCounts}
-            initialUnsortedCount={rootBlocks.length}
-          />
-        </Suspense>
-      </div>
+      <Suspense fallback={null}>
+        <BinderWorkspace
+          projectId={project.id}
+          userId={user!.id}
+          project={{ name: project.name, description: project.description }}
+          coverImageUrl={coverImageUrl}
+          hasCoverImage={!!project.cover_image}
+          initialTabs={tabs}
+          initialTabCounts={tabCounts}
+          initialUnsortedCount={rootBlocks.length}
+        />
+      </Suspense>
     </div>
   );
 }

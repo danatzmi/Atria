@@ -26,7 +26,11 @@ export function FolderFormDialog({
   dialogTitle?: string;
   namePlaceholder?: string;
   submitLabel?: string;
-  onSuccess?: () => void;
+  // The newly created tab's id, when the caller wants to navigate straight
+  // to it (e.g. the sidebar's top-level "+ Tab" trigger) — undefined for
+  // callers that just want the list refreshed in place (e.g. "+ Sub-tab",
+  // which stays on the current tab so the new one appears inline).
+  onSuccess?: (id?: string) => void;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [state, formAction, pending] = useActionState(createFolder, initialState);
@@ -37,10 +41,10 @@ export function FolderFormDialog({
     if (wasPendingRef.current && !pending && !state.error) {
       dialogRef.current?.close();
       setOpen(false);
-      onSuccess?.();
+      onSuccess?.(state.id);
     }
     wasPendingRef.current = pending;
-  }, [pending, state.error, onSuccess]);
+  }, [pending, state.error, state.id, onSuccess]);
 
   return (
     <>

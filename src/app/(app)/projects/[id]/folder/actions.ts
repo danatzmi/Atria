@@ -19,7 +19,7 @@ import {
 } from "./data";
 import type { BlockFontFamily, BlockFontSize, BlockRow, BlockType, FolderRow } from "./data";
 
-export type FolderActionState = { error: string | null };
+export type FolderActionState = { error: string | null; id?: string };
 
 // Everything now lives on the project page (the binder workspace fetches
 // its own content client-side via RPC calls like getTabContents below) —
@@ -71,17 +71,21 @@ export async function createFolder(
       ? Number(explicitSortOrderRaw)
       : await nextFolderSortOrder(supabase, projectId, resolvedParentId);
 
-  const { error } = await supabase.from("folders").insert({
-    project_id: projectId,
-    parent_folder_id: resolvedParentId,
-    name,
-    sort_order: sortOrder,
-  });
+  const { data, error } = await supabase
+    .from("folders")
+    .insert({
+      project_id: projectId,
+      parent_folder_id: resolvedParentId,
+      name,
+      sort_order: sortOrder,
+    })
+    .select("id")
+    .single();
 
   if (error) return { error: "Couldn't create the tab. Please try again." };
 
   revalidateProjectFiles(projectId);
-  return { error: null };
+  return { error: null, id: data.id };
 }
 
 // Drag-and-drop reorder for Tabs/Sub-tabs — the client computes the target
@@ -158,6 +162,43 @@ export async function moveFolder(
   return { error: null };
 }
 
+// Drag-and-drop reorder AND reparent for the sidebar's Tab/Sub-tab tree —
+// unlike moveFolder (form-action, parent only) and moveFolderToPosition
+// (RPC, position only), a sidebar drop target always needs both written
+// atomically: dropping into a different list changes parent_folder_id, and
+// its position within that list needs an exact fractional sort_order from
+// the two neighbors either side of the drop. Same cycle-prevention as
+// moveFolder above (self-drop, drop-into-own-descendant).
+export async function moveFolderToParent(
+  folderId: string,
+  projectId: string,
+  newParentFolderId: string | null,
+  sortOrder: number
+): Promise<{ error: string | null }> {
+  if (newParentFolderId === folderId) {
+    return { error: "Can't move a tab into itself." };
+  }
+
+  const supabase = await createClient();
+
+  if (newParentFolderId) {
+    const descendantIds = await getFolderDescendantIds(supabase, folderId);
+    if (descendantIds.has(newParentFolderId)) {
+      return { error: "Can't move a tab into one of its own sub-tabs." };
+    }
+  }
+
+  const { error } = await supabase
+    .from("folders")
+    .update({ parent_folder_id: newParentFolderId, sort_order: sortOrder })
+    .eq("id", folderId);
+
+  if (error) return { error: "Couldn't move the tab. Please try again." };
+
+  revalidateProjectFiles(projectId);
+  return { error: null };
+}
+
 export async function deleteFolder(
   _prevState: FolderActionState,
   formData: FormData
@@ -187,7 +228,10 @@ export async function deleteFolder(
 
   const { error } = await supabase.from("folders").delete().eq("id", folderId);
 
-  if (error) return { error: "Couldn't delete the tab. Please try again." };
+  if (error) {
+    console.error("deleteFolder error:", error);
+    return { error: "Couldn't delete the tab. Please try again." };
+  }
 
   const keys = (files ?? []).flatMap((f) =>
     [f.storage_key, f.thumbnail_key].filter((k): k is string => !!k)

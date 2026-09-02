@@ -10,6 +10,12 @@ type ProjectFormDialogProps =
   | {
       mode: "edit";
       project: { id: string; name: string; description: string | null };
+      // Lets a caller other than the top nav's bare pencil icon reuse this
+      // same dialog with its own trigger — e.g. Project Overview's
+      // prominent "+ Add Overview" button when there's no description yet.
+      // Omitted keeps the existing subtle icon-only trigger.
+      triggerLabel?: string;
+      triggerClassName?: string;
     };
 
 export function ProjectFormDialog(props: ProjectFormDialogProps) {
@@ -38,12 +44,17 @@ export function ProjectFormDialog(props: ProjectFormDialogProps) {
         className={
           props.mode === "create"
             ? "rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
-            : "rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+            : (props.triggerClassName ??
+              "rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900")
         }
-        aria-label={props.mode === "create" ? undefined : "Edit project"}
+        aria-label={
+          props.mode === "create" || props.triggerLabel ? undefined : "Edit project"
+        }
       >
         {props.mode === "create" ? (
           "New project"
+        ) : props.triggerLabel ? (
+          props.triggerLabel
         ) : (
           <svg
             xmlns="http://www.w3.org/2000/svg"
