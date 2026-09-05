@@ -2,10 +2,10 @@
 
 import { useCallback, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { getTabCounts, getTabContents } from "./folder/actions";
+import { getSubtabCounts, getTabCounts, getTabContents } from "./folder/actions";
 import type { FolderRow } from "./folder/data";
 import { FolderBrowser } from "./folder/browser";
-import { MenuIcon } from "./folder/item-icon";
+import { ChevronLeftIcon, MenuIcon } from "./folder/item-icon";
 import { CoverImageDialog } from "./cover-image-dialog";
 import { ProjectFormDialog } from "../project-form-dialog";
 import { ProjectSidebar, UNSORTED } from "./project-sidebar";
@@ -22,20 +22,26 @@ type Tab = { id: string; name: string; sort_order: number };
 export function BinderWorkspace({
   projectId,
   userId,
-  project,
+  projectName,
+  projectDescription,
   coverImageUrl,
   hasCoverImage,
   initialTabs,
   initialTabCounts,
+  initialSubtabCounts,
   initialUnsortedCount,
 }: {
   projectId: string;
   userId: string;
-  project: { name: string; description: string | null };
+  // Both only for the Project Home canvas's Overview section — the name is
+  // needed there solely to satisfy the edit dialog's project shape.
+  projectName: string;
+  projectDescription: string | null;
   coverImageUrl: string | null;
   hasCoverImage: boolean;
   initialTabs: FolderRow[];
   initialTabCounts: Record<string, number>;
+  initialSubtabCounts: Record<string, number>;
   initialUnsortedCount: number;
 }) {
   const router = useRouter();
@@ -56,6 +62,7 @@ export function BinderWorkspace({
     initialTabs.map((f) => ({ id: f.id, name: f.name, sort_order: f.sort_order }))
   );
   const [tabCounts, setTabCounts] = useState(initialTabCounts);
+  const [subtabCounts, setSubtabCounts] = useState(initialSubtabCounts);
   const [unsortedCount, setUnsortedCount] = useState(initialUnsortedCount);
   // Only actually needed for a deep-linked Sub-tab (any depth below the
   // top-level Tabs, whose name isn't in `tabs`) — top-level Tabs and
@@ -66,19 +73,25 @@ export function BinderWorkspace({
   // Below md, ProjectSidebar renders as a slide-out drawer instead of a
   // static column (one shared instance either way — see its own comment).
   const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
+  // Desktop only — at md and up the sidebar can be collapsed to give the
+  // canvas the full width. Deliberately separate from mobileDrawerOpen:
+  // below md the sidebar is a drawer and this has no effect at all.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // A Tab itself was created/renamed/deleted, or a mutation happened
   // somewhere inside an open Tab (bubbled up so the sidebar's list and
   // count badges stay accurate — see FolderBrowser's onItemsChanged and
   // ProjectSidebar's own comment on reusing tabCounts as a refresh signal).
   const refreshTabs = useCallback(async () => {
-    const [result, counts] = await Promise.all([
+    const [result, counts, subCounts] = await Promise.all([
       getTabContents(projectId, null),
       getTabCounts(projectId),
+      getSubtabCounts(projectId),
     ]);
     setTabs(result.folders.map((f) => ({ id: f.id, name: f.name, sort_order: f.sort_order })));
     setUnsortedCount(result.blocks.length);
     setTabCounts(counts);
+    setSubtabCounts(subCounts);
   }, [projectId]);
 
   function navigate(tab: string | null, name?: string) {
@@ -100,15 +113,7 @@ export function BinderWorkspace({
     setMobileDrawerOpen(false);
   }
 
-  // A deep-linked Sub-tab (any depth) shows its own top-level position when
-  // it happens to be one of the top-level Tabs; otherwise the canvas simply
-  // starts its index path fresh at "01" rather than threading the full
-  // dotted path down from the sidebar tree — a disclosed simplification,
-  // purely cosmetic (it only affects the numbering shown inside the canvas).
   const activeTab = tabs.find((t) => t.id === activeTabId);
-  const activeTabIndex = tabs.findIndex((t) => t.id === activeTabId);
-  const activeIndexPath =
-    activeTabIndex >= 0 ? String(activeTabIndex + 1).padStart(2, "0") : "01";
   // The canvas header's title: derived straight from state for a top-level
   // Tab or Unsorted (always correct, including after back/forward), and
   // falling back to whatever name the sidebar passed on last click for a
@@ -141,6 +146,7 @@ export function BinderWorkspace({
         projectId={projectId}
         tabs={tabs}
         tabCounts={tabCounts}
+        subtabCounts={subtabCounts}
         unsortedCount={unsortedCount}
         activeTabId={activeTabId}
         editable={editable}
@@ -148,13 +154,32 @@ export function BinderWorkspace({
         onChanged={refreshTabs}
         mobileOpen={mobileDrawerOpen}
         onCloseMobile={() => setMobileDrawerOpen(false)}
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((v) => !v)}
       />
 
       <div className="min-w-0 flex-1 p-4 sm:p-6 md:p-8">
+        {/* The way back once the sidebar is collapsed. Desktop only, and
+            only while collapsed — expanded, the control lives in the
+            sidebar itself. */}
+        {sidebarCollapsed && (
+          <button
+            type="button"
+            onClick={() => setSidebarCollapsed(false)}
+            aria-label="Show tabs"
+            title="Show tabs"
+            className="mb-4 hidden items-center gap-2 rounded-md border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900 md:flex"
+          >
+            {/* Mirrored to point right (›) — the same chevron the sidebar
+                collapses with, pointing back the way it came. */}
+            <ChevronLeftIcon className="h-4 w-4 rotate-180" />
+            Tabs
+          </button>
+        )}
         {activeTabId === null ? (
           <ProjectOverview
-            name={project.name}
-            description={project.description}
+            projectName={projectName}
+            description={projectDescription}
             coverImageUrl={coverImageUrl}
             hasCoverImage={hasCoverImage}
             projectId={projectId}
@@ -166,7 +191,6 @@ export function BinderWorkspace({
             projectId={projectId}
             userId={userId}
             folderId={activeTabId === UNSORTED ? null : activeTabId}
-            indexPath={activeTabId === UNSORTED ? "" : activeIndexPath}
             name={activeTabName}
             onItemsChanged={refreshTabs}
             editable={editable}
@@ -177,15 +201,13 @@ export function BinderWorkspace({
   );
 }
 
-// The Main Canvas's default view when no Tab is active: what the project
-// is, at a glance. The large cover banner + name + description used to live
-// permanently in the page header; it now only shows here, since the header
-// is a slim persistent nav bar across every Tab too. Below that, an
-// editorial space for the project's own overview/notes — the Tab list
-// itself isn't repeated here since the sidebar, right beside this canvas,
-// already shows it.
+// The Main Canvas's default view when no Tab is active: the cover banner
+// (with its Change-cover action in edit mode), then the project's own
+// Overview notes, then — for a project with nothing in it yet — the
+// first-tab invitation. The project's name isn't repeated here; it lives
+// once in the top nav bar, visible from every Tab.
 function ProjectOverview({
-  name,
+  projectName,
   description,
   coverImageUrl,
   hasCoverImage,
@@ -193,7 +215,7 @@ function ProjectOverview({
   editable,
   hasTabs,
 }: {
-  name: string;
+  projectName: string;
   description: string | null;
   coverImageUrl: string | null;
   hasCoverImage: boolean;
@@ -202,7 +224,7 @@ function ProjectOverview({
   hasTabs: boolean;
 }) {
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="w-full">
       <div className="relative aspect-[3/1] w-full overflow-hidden rounded-xl bg-zinc-100">
         {coverImageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -231,12 +253,8 @@ function ProjectOverview({
         )}
       </div>
 
-      <div className="mt-5">
-        <h2 className="text-2xl font-semibold tracking-tight text-zinc-900">{name}</h2>
-      </div>
-
       {description ? (
-        <div className="mt-8">
+        <div className="mt-6">
           <div className="flex items-center justify-between">
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
               Overview
@@ -244,28 +262,25 @@ function ProjectOverview({
             {editable && (
               <ProjectFormDialog
                 mode="edit"
-                project={{ id: projectId, name, description }}
+                field="overview"
+                project={{ id: projectId, name: projectName, description }}
               />
             )}
           </div>
-          <p className="mt-3 max-w-2xl whitespace-pre-line text-base leading-relaxed text-stone-600">
+          <p className="mt-3 whitespace-pre-line text-base leading-relaxed text-stone-600">
             {description}
           </p>
         </div>
       ) : (
         editable && (
-          <div className="mt-8 rounded-xl border border-dashed border-stone-300 px-6 py-10 text-center">
-            <p className="mx-auto max-w-sm text-sm text-stone-400">
-              Add an overview, project goals, timeline, or notes about this project.
-            </p>
-            <div className="mt-4">
-              <ProjectFormDialog
-                mode="edit"
-                project={{ id: projectId, name, description }}
-                triggerLabel="+ Add Overview"
-                triggerClassName="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
-              />
-            </div>
+          <div className="mt-6">
+            <ProjectFormDialog
+              mode="edit"
+              field="overview"
+              project={{ id: projectId, name: projectName, description }}
+              triggerLabel="+ Add overview"
+              triggerClassName="flex items-center gap-1.5 text-xs font-medium text-stone-400 transition-colors hover:text-stone-700"
+            />
           </div>
         )
       )}

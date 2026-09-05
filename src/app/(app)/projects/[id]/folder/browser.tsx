@@ -28,7 +28,7 @@ import {
   moveBlockToPosition,
   moveFolderToPosition,
 } from "./actions";
-import { DocumentIcon, GripIcon, PlayIcon, UploadIcon } from "./item-icon";
+import { DocumentIcon, PlayIcon, UploadIcon } from "./item-icon";
 import { RenameDialog } from "./rename-dialog";
 import { MoveDialog } from "./move-dialog";
 import { DeleteItemDialog } from "./delete-item-dialog";
@@ -103,7 +103,6 @@ export function FolderBrowser({
   projectId,
   userId,
   folderId,
-  indexPath,
   name,
   onItemsChanged,
   editable,
@@ -114,10 +113,6 @@ export function FolderBrowser({
   // blocks, no real folder to hold sub-tabs) — every real Tab/Sub-tab has a
   // real id.
   folderId: string | null;
-  // This level's own displayed index ("01", "01.1", ...) shown in the
-  // header — binder-workspace computes it (see its own comment on the
-  // deep-linked-Sub-tab simplification).
-  indexPath: string;
   // This level's own name for the header — null only when binder-workspace
   // hasn't been able to resolve it yet (a hard reload straight into a
   // deep-linked Sub-tab); the header falls back to a placeholder then.
@@ -159,6 +154,71 @@ export function FolderBrowser({
   useEffect(() => {
     fetchSelf();
   }, [fetchSelf]);
+
+  // Auto-scroll while a block is mid-drag: holding the pointer near the top
+  // or bottom edge of the viewport scrolls the page, so an item can be
+  // moved to a gap that's currently off-screen. Native HTML5 drag suppresses
+  // normal wheel/scroll gestures, so without this a long tab can only be
+  // reordered within one screenful. Bound to window (not this subtree) so
+  // it keeps working once the pointer leaves the stream, and only while a
+  // drag is actually in progress.
+  useEffect(() => {
+    if (draggingItem === null) return;
+
+    let animationFrameId: number | null = null;
+    let scrollSpeed = 0;
+
+    const SCROLL_ZONE_PX = 90;
+    const MAX_SPEED = 18;
+
+    // globalThis.DragEvent, not React's synthetic DragEvent imported at the
+    // top of this file — this is a raw DOM listener.
+    function handleWindowDragOver(e: globalThis.DragEvent) {
+      const y = e.clientY;
+      const height = window.innerHeight;
+
+      if (y < SCROLL_ZONE_PX) {
+        const intensity = (SCROLL_ZONE_PX - y) / SCROLL_ZONE_PX;
+        scrollSpeed = -Math.max(4, Math.round(intensity * MAX_SPEED));
+      } else if (y > height - SCROLL_ZONE_PX) {
+        const intensity = (y - (height - SCROLL_ZONE_PX)) / SCROLL_ZONE_PX;
+        scrollSpeed = Math.max(4, Math.round(intensity * MAX_SPEED));
+      } else {
+        scrollSpeed = 0;
+      }
+
+      if (scrollSpeed !== 0 && animationFrameId === null) {
+        const step = () => {
+          if (scrollSpeed !== 0) {
+            window.scrollBy(0, scrollSpeed);
+            animationFrameId = requestAnimationFrame(step);
+          } else {
+            animationFrameId = null;
+          }
+        };
+        animationFrameId = requestAnimationFrame(step);
+      }
+    }
+
+    function stopScrolling() {
+      scrollSpeed = 0;
+      if (animationFrameId !== null) {
+        cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+      }
+    }
+
+    window.addEventListener("dragover", handleWindowDragOver);
+    window.addEventListener("dragend", stopScrolling);
+    window.addEventListener("drop", stopScrolling);
+
+    return () => {
+      stopScrolling();
+      window.removeEventListener("dragover", handleWindowDragOver);
+      window.removeEventListener("dragend", stopScrolling);
+      window.removeEventListener("drop", stopScrolling);
+    };
+  }, [draggingItem]);
 
   function refresh() {
     fetchSelf();
@@ -287,11 +347,6 @@ export function FolderBrowser({
     >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-stone-200 pb-4">
         <div className="flex min-w-0 items-center gap-2.5">
-          {indexPath && (
-            <span className="shrink-0 font-mono text-xs tracking-wider text-stone-400">
-              {indexPath}
-            </span>
-          )}
           <h2 className="truncate text-lg font-semibold tracking-tight text-stone-900">
             {name ?? "Untitled tab"}
           </h2>
@@ -311,15 +366,8 @@ export function FolderBrowser({
                 onUploadFiles={() => pickAndUploadFiles()}
                 onSuccess={refresh}
               />
-              {folderId && (
-                <RenameDialog
-                  kind="folder"
-                  itemId={folderId}
-                  projectId={projectId}
-                  currentName={name ?? ""}
-                  onSuccess={refresh}
-                />
-              )}
+              {/* Renaming a tab lives only in the sidebar row now, so the
+                  tab's name has exactly one edit affordance. */}
             </>
           )}
         </div>
@@ -356,18 +404,6 @@ export function FolderBrowser({
                   <UploadIcon className="h-4 w-4" />
                   Upload File
                 </button>
-                {!isUnsorted && (
-                  <FolderFormDialog
-                    projectId={projectId}
-                    parentFolderId={folderId}
-                    triggerLabel="+ Sub-tab"
-                    triggerClassName="flex items-center gap-1.5 rounded-md border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50"
-                    dialogTitle="New sub-tab"
-                    namePlaceholder="Hardware"
-                    submitLabel="Add sub-tab"
-                    onSuccess={refresh}
-                  />
-                )}
               </div>
             )}
           </div>
@@ -382,7 +418,6 @@ export function FolderBrowser({
             <BlockGap
               projectId={projectId}
               sectionId={folderId}
-              allowSubtabs={!isUnsorted}
               before={undefined}
               after={firstSortOrder(items[0])}
               isDragging={draggingItem !== null}
@@ -437,7 +472,6 @@ export function FolderBrowser({
                 <BlockGap
                   projectId={projectId}
                   sectionId={folderId}
-                  allowSubtabs={!isUnsorted}
                   before={lastSortOrder(item)}
                   after={items[i + 1] ? firstSortOrder(items[i + 1]) : undefined}
                   isDragging={draggingItem !== null}
@@ -585,7 +619,7 @@ function AddMenu({
               dialogTitle="New text block"
               placeholder="Write anything worth remembering about this tab…"
               submitLabel="Add block"
-              triggerLabel="Text Note"
+              triggerLabel="Text"
               triggerClassName={itemClassName}
               onSuccess={handleSuccess}
             />
@@ -625,7 +659,6 @@ function AddMenu({
 function BlockGap({
   projectId,
   sectionId,
-  allowSubtabs,
   before,
   after,
   isDragging,
@@ -638,9 +671,6 @@ function BlockGap({
 }: {
   projectId: string;
   sectionId: string | null;
-  // Sub-tabs can't be created under the virtual Unsorted view (no real
-  // folder to hold them), so its gaps offer just Text/Upload File.
-  allowSubtabs: boolean;
   // The stream neighbors' sort_order — a plain number rather than a
   // BlockRow, since a gap's neighbor may just as well be a sub-tab now.
   before?: number;
@@ -711,19 +741,6 @@ function BlockGap({
             onSuccess={onItemsChanged}
           />
           <GapUploadButton onUploadFiles={onUploadFiles} sortOrder={sortOrder} />
-          {allowSubtabs && (
-            <FolderFormDialog
-              projectId={projectId}
-              parentFolderId={sectionId}
-              sortOrder={sortOrder}
-              triggerLabel="+ Sub-tab"
-              triggerClassName="rounded-full border border-stone-300 bg-white px-2.5 py-0.5 text-xs font-medium text-stone-500 shadow-sm transition-colors hover:bg-stone-50"
-              dialogTitle="New sub-tab"
-              namePlaceholder="Hardware"
-              submitLabel="Add sub-tab"
-              onSuccess={onItemsChanged}
-            />
-          )}
         </div>
       )}
     </div>
@@ -766,43 +783,6 @@ function pickFiles(onFiles: (files: FileList) => void) {
     once: true,
   });
   input.click();
-}
-
-// Shared full-height grab handle for every stream row (text/photo/video/
-// document blocks). A narrow icon-only target is easy to miss — this gives
-// it real width and a persistent tinted background so it reads as
-// "grabbable" even before the pointer is over it.
-function GripHandle({
-  draggable,
-  onDragStart,
-  onDragEnd,
-}: {
-  draggable: boolean;
-  onDragStart: (e: DragEvent) => void;
-  onDragEnd: () => void;
-}) {
-  if (!draggable) return <div className="w-8 shrink-0" />;
-  return (
-    // A <button> here would be correct semantically, but WebKit/Chromium
-    // both intercept mousedown on native button/form elements for their
-    // press-state handling, which can swallow the mousedown before the
-    // browser ever starts the HTML5 drag gesture — a real (non-synthetic)
-    // mouse drag on a <button draggable> is unreliable in practice. A div
-    // with role="button" keeps the same a11y semantics without that
-    // interception.
-    <div
-      role="button"
-      tabIndex={0}
-      draggable
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
-      aria-label="Drag to reorder"
-      title="Drag to reorder"
-      className="flex w-8 shrink-0 cursor-grab select-none items-center justify-center self-stretch rounded-md bg-stone-100/50 text-stone-400 transition-colors hover:bg-stone-200/60 hover:text-stone-700 active:cursor-grabbing"
-    >
-      <GripIcon className="h-4 w-4" />
-    </div>
-  );
 }
 
 function BlockItem({
@@ -913,12 +893,21 @@ function TextBlockRow({
   onChanged: () => void;
 }) {
   return (
-    <div className={`group flex items-start gap-1 ${className ?? ""}`}>
-      {/* Grip only, not a draggable card body — a text block's card is where
-          the user selects and edits prose, so it stays a plain click/type
-          target rather than also being a drag source. */}
-      <GripHandle draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd} />
-      <div className="relative flex-1 rounded-lg border border-stone-200 bg-amber-50/40 p-4 shadow-sm">
+    <div className={`group flex items-start ${className ?? ""}`}>
+      {/* The card body IS the drag source — there's no separate grip.
+          select-none matters here specifically: a mousedown landing on the
+          prose would otherwise start a native text-selection gesture that
+          races (and in Chrome/Safari cancels) the drag. The trade-off is
+          that a note's text can no longer be selected/copied straight off
+          the card — the Edit dialog is where its text is reachable. */}
+      <div
+        className={`relative flex-1 rounded-lg border border-stone-200 bg-amber-50/40 p-4 shadow-sm ${
+          draggable ? "cursor-grab select-none active:cursor-grabbing" : ""
+        }`}
+        draggable={draggable}
+        onDragStart={draggable ? onDragStart : undefined}
+        onDragEnd={draggable ? onDragEnd : undefined}
+      >
         <div
           className={
             // Whole-block font/size only ever applies to legacy (markdown)
@@ -934,7 +923,13 @@ function TextBlockRow({
           {renderBlockContent(block.content)}
         </div>
         {editable && (
-          <div className="absolute right-3 top-3 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          // draggable={false} so a press on Edit/Delete never starts the
+          // card's drag instead of the click, and cursor-pointer so they
+          // don't inherit the card's grab cursor.
+          <div
+            draggable={false}
+            className="absolute right-3 top-3 flex cursor-pointer gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+          >
             <BlockFormDialog
               projectId={projectId}
               mode="edit"
@@ -944,7 +939,7 @@ function TextBlockRow({
               dialogTitle="Edit text block"
               submitLabel="Save"
               triggerLabel="Edit"
-              triggerClassName="rounded-md bg-white/90 px-2 py-1 text-xs font-medium text-stone-600 shadow-sm backdrop-blur-sm transition-colors hover:bg-white"
+              triggerClassName="cursor-pointer rounded-md bg-white/90 px-2 py-1 text-xs font-medium text-stone-600 shadow-sm backdrop-blur-sm transition-colors hover:bg-white"
               onSuccess={onChanged}
             />
             <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
@@ -993,9 +988,8 @@ function PhotoBlockRow({
   if (!file) return null;
 
   return (
-    <div className={`group flex items-start gap-1 ${className ?? ""}`}>
-      <GripHandle draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd} />
-      {/* The card itself is also a drag source. select-none matters here —
+    <div className={`group flex items-start ${className ?? ""}`}>
+      {/* The card itself is the drag source. select-none matters here —
           without it, a mousedown that lands on the caption text starts a
           native text-selection gesture instead of (or racing) the drag,
           which cancels it in Chrome and Safari. Nested buttons (Rename/
@@ -1208,8 +1202,7 @@ function PhotoGridItem({
       className={`group/griditem relative ${isDragging ? "opacity-40" : ""} ${
         isDragOver ? "rounded-md ring-2 ring-stone-400" : ""
       } ${draggable ? "cursor-grab select-none active:cursor-grabbing" : ""}`}
-      // The whole tile is a drag source too, not just the overlay badge — a
-      // small icon-only target on a photo grid is easy to miss.
+      // The whole tile is the drag source — no overlay grip badge.
       draggable={draggable}
       onDragStart={draggable ? handleDragStart : undefined}
       onDragEnd={draggable ? onDragEndBlock : undefined}
@@ -1235,25 +1228,6 @@ function PhotoGridItem({
         if (payload) onDropOnBlock(payload);
       }}
     >
-      {draggable && (
-        // A div, not a button — see BlockItem's grip comment: native
-        // buttons can swallow the mousedown that starts a real drag in
-        // WebKit/Chromium before dragstart ever fires. The tile itself is
-        // now also draggable (above); this overlay badge stays as an
-        // explicit, always-discoverable affordance on top of the image.
-        <div
-          role="button"
-          tabIndex={0}
-          draggable
-          onDragStart={handleDragStart}
-          onDragEnd={onDragEndBlock}
-          aria-label="Drag to reorder"
-          title="Drag to reorder"
-          className="absolute left-1.5 top-1.5 z-10 flex h-7 w-7 cursor-grab select-none items-center justify-center rounded bg-white/90 text-stone-500 opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:text-stone-700 active:cursor-grabbing group-hover/griditem:opacity-100"
-        >
-          <GripIcon className="h-3.5 w-3.5" />
-        </div>
-      )}
       <PhotoCardBody
         projectId={projectId}
         file={file}
@@ -1290,8 +1264,7 @@ function VideoBlockRow({
   if (!file) return null;
 
   return (
-    <div className={`group flex items-start gap-1 ${className ?? ""}`}>
-      <GripHandle draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd} />
+    <div className={`group flex items-start ${className ?? ""}`}>
       <div
         className={`group/video relative w-full max-w-xs flex-1 ${draggable ? "cursor-grab select-none active:cursor-grabbing" : ""}`}
         draggable={draggable}
@@ -1331,8 +1304,14 @@ function VideoBlockRow({
   );
 }
 
-// A horizontal attachment strip — format badge, name, size, an open action —
-// reads as a stack of plans/specs rather than a grid of icons.
+// A document reads as a card on the page — paper preview, format badge, and
+// a filename/size footer — matching the Photo and Video cards rather than a
+// horizontal list strip. The open affordance is a div with role="button"
+// rather than a native <button>: WebKit/Chromium intercept mousedown on
+// native buttons for their own press-state handling, which can swallow the
+// event before an HTML5 drag ever starts (the same reason the old grip
+// handles were divs). A plain click never begins a drag, so click-to-open
+// and drag-to-reorder coexist on the same surface.
 function DocumentBlockRow({
   projectId,
   block,
@@ -1353,39 +1332,88 @@ function DocumentBlockRow({
   onChanged: () => void;
 }) {
   const file = block.file;
+  const [opening, setOpening] = useState(false);
   if (!file) return null;
 
+  async function handleOpen() {
+    if (opening) return;
+    setOpening(true);
+    const { url } = await getFileDownloadUrl(file!.id);
+    setOpening(false);
+    if (url) window.open(url, "_blank", "noopener,noreferrer");
+  }
+
   return (
-    <div className={`group flex items-center gap-1 ${className ?? ""}`}>
-      <GripHandle draggable={draggable} onDragStart={onDragStart} onDragEnd={onDragEnd} />
+    <div className={`group/file relative flex items-start ${className ?? ""}`}>
+      {/* `relative` here, not only on the wrapper — the hover actions below
+          are absolutely positioned and must anchor to this max-w-xs card,
+          not to the full-width row around it. */}
       <div
-        className={`flex flex-1 flex-wrap items-center gap-3 rounded-lg border border-stone-200 bg-white px-3 py-2.5 shadow-sm ${draggable ? "cursor-grab select-none active:cursor-grabbing" : ""}`}
+        className={`relative w-full max-w-xs flex-1 rounded-lg border border-stone-200 bg-white shadow-sm transition-all hover:shadow-md ${
+          draggable ? "cursor-grab select-none active:cursor-grabbing" : ""
+        }`}
         draggable={draggable}
         onDragStart={draggable ? onDragStart : undefined}
         onDragEnd={draggable ? onDragEnd : undefined}
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-stone-100">
-          <DocumentIcon className="h-4 w-4 text-stone-400" />
-        </span>
-        {/* Format badge and byte size are supplementary — hidden below sm so
-            the row never has to squeeze the filename to near-nothing (or
-            overflow) to fit them alongside the View/action buttons. */}
-        <span className="hidden shrink-0 rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-stone-500 sm:inline-block">
-          {getFormatLabel(file.mime_type, file.name)}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-medium text-stone-900">{file.name}</span>
-        <span className="hidden shrink-0 text-xs text-stone-400 sm:inline">{formatBytes(file.size_bytes)}</span>
-        <FileOpenButton
-          fileId={file.id}
-          className="shrink-0 rounded-md border border-stone-300 px-2.5 py-1 text-xs font-medium text-stone-600 transition-colors hover:bg-stone-50"
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={handleOpen}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleOpen();
+            }
+          }}
+          className="relative flex aspect-[4/3] w-full flex-col items-center justify-center overflow-hidden rounded-t-lg bg-stone-50/80 transition-colors hover:bg-stone-100/60"
         >
-          View
-        </FileOpenButton>
+          <span className="absolute left-2.5 top-2.5 rounded bg-stone-900/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white">
+            {getFormatLabel(file.mime_type, file.name)}
+          </span>
+
+          <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-stone-200/60">
+            <DocumentIcon className="h-8 w-8 text-stone-500" />
+          </div>
+
+          <span className="mt-3 text-[11px] font-medium text-stone-400">
+            {opening ? "Opening…" : "Click to view"}
+          </span>
+        </div>
+
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={handleOpen}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              handleOpen();
+            }
+          }}
+          className="border-t border-stone-100 px-3 py-2.5 text-left"
+        >
+          <p className="truncate text-sm font-medium text-stone-900" title={file.name}>
+            {file.name}
+          </p>
+          <p className="mt-0.5 text-xs text-stone-400">{formatBytes(file.size_bytes)}</p>
+        </div>
+
         {editable && (
-          <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
-            <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
-            <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-            <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+          <div
+            draggable={false}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover/file:opacity-100"
+          >
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
+            </div>
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+            </div>
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+            </div>
           </div>
         )}
       </div>

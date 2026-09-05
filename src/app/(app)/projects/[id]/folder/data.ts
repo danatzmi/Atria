@@ -149,6 +149,30 @@ export async function getFolderDescendantIds(
   return descendants;
 }
 
+// Sub-tabs only, keyed by parent folder id — deliberately separate from
+// getTabItemCounts above, which merges child folders AND blocks into one
+// number. The sidebar needs to know whether a tab has any *sub-tabs* before
+// it's ever expanded (chevron vs. dot), and a merged count can't answer
+// that: a tab holding only photos would wrongly look expandable.
+export async function getSubtabItemCounts(
+  supabase: SupabaseClient,
+  projectId: string
+): Promise<Record<string, number>> {
+  const { data: folders } = await supabase
+    .from("folders")
+    .select("parent_folder_id")
+    .eq("project_id", projectId)
+    .not("parent_folder_id", "is", null);
+
+  const counts: Record<string, number> = {};
+  for (const f of folders ?? []) {
+    if (f.parent_folder_id) {
+      counts[f.parent_folder_id] = (counts[f.parent_folder_id] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
+
 // Shared by the direct (non-recursive) client-side filter in browser.tsx and
 // the recursive subtree search below — one substring-match definition so
 // the two can't drift apart. Plain function, no client-only APIs, safe to

@@ -44,14 +44,11 @@ export function ProjectCard({
             </div>
           )}
         </div>
+        {/* Cover + name only — the description now lives on the project's
+            own home canvas, where there's room to actually read it. */}
         <h3 className="mt-3 truncate text-sm font-medium text-zinc-900">
           {project.name}
         </h3>
-        {project.description && (
-          <p className="mt-0.5 line-clamp-1 text-sm text-zinc-500">
-            {project.description}
-          </p>
-        )}
       </Link>
 
       <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">

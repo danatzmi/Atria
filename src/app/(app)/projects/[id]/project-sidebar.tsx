@@ -6,7 +6,7 @@ import { FolderFormDialog } from "./folder/folder-form-dialog";
 import { RenameDialog } from "./folder/rename-dialog";
 import { DeleteItemDialog } from "./folder/delete-item-dialog";
 import { DividerDropZone } from "./folder/divider-row";
-import { ChevronIcon, CloseIcon } from "./folder/item-icon";
+import { ChevronIcon, ChevronLeftIcon, CloseIcon } from "./folder/item-icon";
 import { midpointSortOrder } from "@/lib/sort-order";
 import { readDragPayload, setDragPayload, type DragPayload } from "@/lib/drag-payload";
 
@@ -96,6 +96,7 @@ export function ProjectSidebar({
   projectId,
   tabs,
   tabCounts,
+  subtabCounts,
   unsortedCount,
   activeTabId,
   editable,
@@ -103,10 +104,14 @@ export function ProjectSidebar({
   onChanged,
   mobileOpen,
   onCloseMobile,
+  collapsed,
+  onToggleCollapsed,
 }: {
   projectId: string;
   tabs: SidebarTab[];
   tabCounts: Record<string, number>;
+  // Sub-tab counts only (not blocks) — drives chevron vs. dot per row.
+  subtabCounts: Record<string, number>;
   unsortedCount: number;
   activeTabId: string | null;
   editable: boolean;
@@ -124,6 +129,11 @@ export function ProjectSidebar({
   // this component only needs to render its own open/closed presentation.
   mobileOpen: boolean;
   onCloseMobile: () => void;
+  // Desktop only. The mobile drawer is driven entirely by mobileOpen above,
+  // so collapsing never applies below md — a collapsed sidebar would
+  // otherwise leave the drawer permanently unopenable.
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }) {
   const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
   const [dragOverZoneKey, setDragOverZoneKey] = useState<string | null>(null);
@@ -150,10 +160,38 @@ export function ProjectSidebar({
         />
       )}
       <aside
+        // Two independent behaviors on one element: below md it slides in as
+        // a drawer (translate-x), at md and up it's a static column that
+        // collapses by animating its width to 0. Only the md: classes change
+        // with `collapsed`, so the drawer keeps working exactly as before.
         className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col overflow-y-auto border-r border-stone-200 bg-white px-3 py-6 shadow-xl transition-transform duration-200 ease-out ${
           mobileOpen ? "translate-x-0" : "-translate-x-full"
-        } md:static md:z-auto md:w-64 md:translate-x-0 md:bg-stone-50/50 md:shadow-none lg:w-72`}
+        } md:static md:z-auto md:translate-x-0 md:bg-stone-50/50 md:shadow-none md:transition-[width,padding] md:duration-200 md:ease-out ${
+          collapsed
+            ? // md:invisible as well as w-0: clipping to zero width hides the
+              // tabs visually but leaves every control in the tab order, so a
+              // keyboard user would otherwise tab into a sidebar they can't
+              // see. visibility:hidden takes them out of it and still animates.
+              "md:invisible md:w-0 md:overflow-hidden md:border-r-0 md:px-0 lg:w-0"
+            : "md:w-64 lg:w-72"
+        }`}
       >
+        {/* Desktop collapse control. Hidden on mobile, where the drawer's
+            own X button (below) is the way out. The word "Collapse" carries
+            the meaning here — a bare glyph asks the reader to already know
+            the convention, and this sidebar's audience shouldn't have to. */}
+        <div className="mb-3 hidden md:flex md:justify-end">
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            title="Collapse sidebar"
+            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold tracking-wider text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+          >
+            <ChevronLeftIcon className="h-3.5 w-3.5" />
+            COLLAPSE
+          </button>
+        </div>
+
         <div className="mb-2 flex items-center justify-between md:hidden">
           <span className="text-sm font-semibold text-stone-900">Tabs</span>
           <button
@@ -166,19 +204,9 @@ export function ProjectSidebar({
           </button>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onNavigate(null)}
-          className={`flex items-center rounded-md px-3 py-2 text-left text-sm transition-colors ${
-            activeTabId === null
-              ? "bg-white font-medium text-stone-900 shadow-xs"
-              : "text-stone-600 hover:bg-stone-100"
-          }`}
-        >
-          Overview
-        </button>
-
-        <div className="mt-6 flex items-center justify-between px-3">
+        {/* No "Overview" row here — the project title in the top nav bar is
+            the way back to the project home view. */}
+        <div className="flex items-center justify-between px-3">
           <span className="text-[11px] font-semibold tracking-wider text-stone-400">
             TABS
           </span>
@@ -208,10 +236,10 @@ export function ProjectSidebar({
             parentFolderId={null}
             tabs={tabs}
             depth={0}
-            indexPathFor={(index) => String(index + 1).padStart(2, "0")}
             paletteFor={(index) => TAB_PALETTES[index % TAB_PALETTES.length]}
             activeTabId={activeTabId}
             tabCounts={tabCounts}
+            subtabCounts={subtabCounts}
             editable={editable}
             onNavigate={onNavigate}
             onChanged={onChanged}
@@ -252,10 +280,10 @@ function SidebarTabList({
   parentFolderId,
   tabs,
   depth,
-  indexPathFor,
   paletteFor,
   activeTabId,
   tabCounts,
+  subtabCounts,
   editable,
   onNavigate,
   onChanged,
@@ -265,7 +293,6 @@ function SidebarTabList({
   parentFolderId: string | null;
   tabs: SidebarTab[];
   depth: number;
-  indexPathFor: (index: number) => string;
   // Varies by index at the top level (cycles through TAB_PALETTES); every
   // nested SidebarTabList instead passes a constant function returning its
   // own tab's already-resolved palette, so Sub-tabs inherit their parent's
@@ -273,6 +300,7 @@ function SidebarTabList({
   paletteFor: (index: number) => TabPalette;
   activeTabId: string | null;
   tabCounts: Record<string, number>;
+  subtabCounts: Record<string, number>;
   editable: boolean;
   onNavigate: (id: string | null, name?: string) => void;
   onChanged: () => void;
@@ -312,10 +340,10 @@ function SidebarTabList({
             projectId={projectId}
             tab={tab}
             depth={depth}
-            indexPath={indexPathFor(index)}
             palette={paletteFor(index)}
             activeTabId={activeTabId}
             tabCounts={tabCounts}
+            subtabCounts={subtabCounts}
             editable={editable}
             onNavigate={onNavigate}
             onChanged={onChanged}
@@ -332,10 +360,10 @@ function SidebarTabNode({
   projectId,
   tab,
   depth,
-  indexPath,
   palette,
   activeTabId,
   tabCounts,
+  subtabCounts,
   editable,
   onNavigate,
   onChanged,
@@ -344,10 +372,10 @@ function SidebarTabNode({
   projectId: string;
   tab: SidebarTab;
   depth: number;
-  indexPath: string;
   palette: TabPalette;
   activeTabId: string | null;
   tabCounts: Record<string, number>;
+  subtabCounts: Record<string, number>;
   editable: boolean;
   onNavigate: (id: string | null, name?: string) => void;
   onChanged: () => void;
@@ -452,10 +480,18 @@ function SidebarTabNode({
   // Sub-tabs inherit their parent's color family but stay visually quieter
   // at rest — a full palette.bg tint is reserved for top-level tabs (each
   // one's own "distinct color identity" per the sidebar's overall design);
-  // a nested row only shows color via its (thinner) accent bar, index
-  // number, and count pill until it's the active one, at which point it
-  // gets the same activeBg/elevation treatment as any other tab.
+  // a nested row only shows color via its (thinner) accent bar until it's
+  // the active one, at which point it gets the same activeBg/elevation
+  // treatment as any other tab.
   const restBg = depth === 0 ? palette.bg : "bg-white";
+
+  // Server-side sub-tab count, so this is known before the row has ever
+  // been expanded. A tab that only holds photos/notes gets a plain dot
+  // rather than a chevron that would promise hidden sub-tabs it doesn't
+  // have. Falls back to any children already fetched, which keeps the
+  // affordance correct in the instant after adding the first sub-tab,
+  // before the counts refetch lands.
+  const hasSubtabs = (subtabCounts?.[tab.id] ?? 0) > 0 || (children?.length ?? 0) > 0;
 
   return (
     <div>
@@ -493,18 +529,26 @@ function SidebarTabNode({
         <div
           className={`${depth === 0 ? "w-1.5" : "w-1"} shrink-0 self-stretch rounded-full ${palette.accent}`}
         />
-        <button
-          type="button"
-          onClick={toggleExpand}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-200/60 hover:text-stone-700"
-          aria-label={expanded ? "Collapse" : "Expand"}
-        >
-          <ChevronIcon
-            className={`h-3.5 w-3.5 transition-transform duration-150 ${
-              expanded ? "rotate-90" : ""
-            }`}
-          />
-        </button>
+        {hasSubtabs ? (
+          <button
+            type="button"
+            onClick={toggleExpand}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-200/60 hover:text-stone-700"
+            aria-label={expanded ? "Collapse" : "Expand"}
+          >
+            <ChevronIcon
+              className={`h-3.5 w-3.5 transition-transform duration-150 ${
+                expanded ? "rotate-90" : ""
+              }`}
+            />
+          </button>
+        ) : (
+          // A hollow ring, like a binder hole punch — reads as "nothing
+          // nested here" without the filled dot's suggestion of content.
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+            <span className="h-2 w-2 rounded-full border-[1.5px] border-stone-400 bg-transparent" />
+          </span>
+        )}
         <button
           type="button"
           draggable={editable}
@@ -522,15 +566,7 @@ function SidebarTabNode({
             editable ? "cursor-grab active:cursor-grabbing" : ""
           } ${isActive ? palette.text : "text-stone-600"}`}
         >
-          <span className={`shrink-0 font-mono text-[11px] ${palette.text}`}>
-            {indexPath}
-          </span>
           <span className="truncate">{tab.name}</span>
-          <span
-            className={`ml-auto shrink-0 rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] ${palette.text}`}
-          >
-            {tabCounts[tab.id] ?? 0}
-          </span>
         </button>
         {editable && (
           <div
@@ -582,10 +618,10 @@ function SidebarTabNode({
           parentFolderId={tab.id}
           tabs={children}
           depth={depth + 1}
-          indexPathFor={(index) => `${indexPath}.${index + 1}`}
           paletteFor={() => palette}
           activeTabId={activeTabId}
           tabCounts={tabCounts}
+          subtabCounts={subtabCounts}
           editable={editable}
           onNavigate={onNavigate}
           onChanged={onChanged}

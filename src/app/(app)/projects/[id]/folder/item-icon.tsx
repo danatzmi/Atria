@@ -234,6 +234,29 @@ export function MenuIcon({ className }: { className?: string }) {
   );
 }
 
+// Points left (‹) — "tuck this panel away". Deliberately a plain chevron
+// rather than a panel-outline toggle: Atria's users are designers and
+// planners, not developers, and an IDE-style sidebar glyph means nothing to
+// them. Same path as ChevronIcon above, mirrored, so the stroke weight
+// matches every other chevron in the UI. Rotate 180deg via the caller's
+// className for the reopen direction (›).
+export function ChevronLeftIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 20 20"
+      fill="currentColor"
+      className={className}
+    >
+      <path
+        fillRule="evenodd"
+        d="M12.79 14.77a.75.75 0 0 0-.02-1.06L8.832 10l3.938-3.71a.75.75 0 1 0-1.04-1.08l-4.5 4.25a.75.75 0 0 0 0 1.08l4.5 4.25a.75.75 0 0 0 1.06-.02Z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
 // Closes the mobile "Tabs" drawer.
 export function CloseIcon({ className }: { className?: string }) {
   return (

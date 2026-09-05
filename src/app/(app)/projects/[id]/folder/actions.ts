@@ -13,6 +13,7 @@ import {
   getFolderContents,
   getFolderDescendantIds,
   getSectionBlocks,
+  getSubtabItemCounts,
   getTabItemCounts,
   searchSubtree,
   type SubtreeSearchResult,
@@ -568,6 +569,15 @@ export async function getTabCounts(
 ): Promise<Record<string, number>> {
   const supabase = await createClient();
   return getTabItemCounts(supabase, projectId);
+}
+
+// How many SUB-TABS each tab has — what the sidebar uses to decide between
+// an expand chevron and a plain dot, without expanding anything first.
+export async function getSubtabCounts(
+  projectId: string
+): Promise<Record<string, number>> {
+  const supabase = await createClient();
+  return getSubtabItemCounts(supabase, projectId);
 }
 
 // RPC-style, same pattern as getTabContents/getTabCounts above — called by

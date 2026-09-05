@@ -101,17 +101,35 @@ export async function renameProject(
   formData: FormData
 ): Promise<ProjectActionState> {
   const projectId = String(formData.get("project_id") ?? "");
-  const name = String(formData.get("name") ?? "").trim();
-  const description = String(formData.get("description") ?? "").trim();
 
-  if (!name) {
-    return { error: "Give your project a name." };
+  // Partial update: only the fields the submitting form actually rendered
+  // get written. The top header's dialog edits just the title, the Project
+  // Overview canvas's edits just the description, and the dashboard card's
+  // edits both — so an ABSENT field means "leave it as it is", never
+  // "clear it". (A present-but-empty description still clears it, which is
+  // how the overview dialog removes an overview.)
+  const updates: { name?: string; description?: string | null } = {};
+
+  if (formData.has("name")) {
+    const name = String(formData.get("name") ?? "").trim();
+    if (!name) {
+      return { error: "Give your project a name." };
+    }
+    updates.name = name;
+  }
+
+  if (formData.has("description")) {
+    updates.description = String(formData.get("description") ?? "").trim() || null;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return { error: null };
   }
 
   const supabase = await createClient();
   const { error } = await supabase
     .from("projects")
-    .update({ name, description: description || null })
+    .update(updates)
     .eq("id", projectId);
 
   if (error) {
