@@ -22,6 +22,38 @@ import type { BlockFontFamily, BlockFontSize, BlockRow, BlockType, FolderRow } f
 
 export type FolderActionState = { error: string | null; id?: string };
 
+// Shape of a PostgREST/Supabase error — declared locally rather than
+// importing PostgrestError so this also accepts the narrower error objects
+// the storage client returns.
+type DbError = {
+  message: string;
+  code?: string;
+  details?: string | null;
+  hint?: string | null;
+};
+
+// Surfaces the database's own message rather than a generic sentence.
+//
+// This trades a little polish for diagnosability, on purpose: wording like
+// "Could not find the 'font_family' column of 'blocks' in the schema cache"
+// or "new row violates row-level security policy" names the actual fault in
+// a misconfigured database, where "Please try again" sends everyone
+// guessing. The code (PGRST204, 42501, 23503…) is included because it's the
+// fastest thing to search for.
+//
+// Also logged server-side, so the detail lands in the deployment logs even
+// when nobody screenshots the toast. If these ever feel too raw for normal
+// users, this is the single place to soften them again.
+function dbError(action: string, error: DbError): { error: string } {
+  console.error(`[atria] ${action} failed:`, {
+    message: error.message,
+    code: error.code,
+    details: error.details,
+    hint: error.hint,
+  });
+  return { error: error.code ? `${error.message} (${error.code})` : error.message };
+}
+
 // Everything now lives on the project page (the binder workspace fetches
 // its own content client-side via RPC calls like getTabContents below) —
 // this just keeps the server-rendered tab strip fresh on a hard navigation.
@@ -83,7 +115,7 @@ export async function createFolder(
     .select("id")
     .single();
 
-  if (error) return { error: "Couldn't create the tab. Please try again." };
+  if (error) return dbError("createFolder", error);
 
   revalidateProjectFiles(projectId);
   return { error: null, id: data.id };
@@ -103,7 +135,7 @@ export async function moveFolderToPosition(
     .update({ sort_order: sortOrder })
     .eq("id", folderId);
 
-  if (error) return { error: "Couldn't reorder. Please try again." };
+  if (error) return dbError("reorder", error);
   revalidateProjectFiles(projectId);
   return { error: null };
 }
@@ -124,7 +156,7 @@ export async function renameFolder(
     .update({ name })
     .eq("id", folderId);
 
-  if (error) return { error: "Couldn't rename the tab. Please try again." };
+  if (error) return dbError("renameFolder", error);
 
   revalidateProjectFiles(projectId);
   return { error: null };
@@ -157,7 +189,7 @@ export async function moveFolder(
     .update({ parent_folder_id: destination })
     .eq("id", folderId);
 
-  if (error) return { error: "Couldn't move the tab. Please try again." };
+  if (error) return dbError("moveFolder", error);
 
   revalidateProjectFiles(projectId);
   return { error: null };
@@ -194,7 +226,7 @@ export async function moveFolderToParent(
     .update({ parent_folder_id: newParentFolderId, sort_order: sortOrder })
     .eq("id", folderId);
 
-  if (error) return { error: "Couldn't move the tab. Please try again." };
+  if (error) return dbError("moveFolder", error);
 
   revalidateProjectFiles(projectId);
   return { error: null };
@@ -230,8 +262,7 @@ export async function deleteFolder(
   const { error } = await supabase.from("folders").delete().eq("id", folderId);
 
   if (error) {
-    console.error("deleteFolder error:", error);
-    return { error: "Couldn't delete the tab. Please try again." };
+    return dbError("deleteFolder", error);
   }
 
   const keys = (files ?? []).flatMap((f) =>
@@ -295,8 +326,14 @@ export async function createFileRecord(input: {
     .select()
     .single();
 
-  if (error || !file) {
-    return { error: "Couldn't save the uploaded file. Please try again." };
+  if (error) return dbError("createFileRecord (files insert)", error);
+  // No error but no row back means RLS filtered the returned row — the
+  // insert's USING clause passed but SELECT couldn't read it back.
+  if (!file) {
+    return {
+      error:
+        "File row was created but could not be read back — check the files SELECT policy.",
+    };
   }
 
   const kind = classifyMimeType(input.mimeType);
@@ -317,7 +354,7 @@ export async function createFileRecord(input: {
     // back than leave it orphaned. The client-side caller (UploadZone)
     // already purges the storage object whenever createFileRecord errors.
     await supabase.from("files").delete().eq("id", file.id);
-    return { error: "Couldn't save the uploaded file. Please try again." };
+    return dbError("createFileRecord (blocks insert)", blockError);
   }
 
   revalidateProjectFiles(input.projectId);
@@ -340,7 +377,7 @@ export async function renameFile(
     .update({ name })
     .eq("id", fileId);
 
-  if (error) return { error: "Couldn't rename the file. Please try again." };
+  if (error) return dbError("renameFile", error);
 
   revalidateProjectFiles(projectId);
   return { error: null };
@@ -361,7 +398,7 @@ export async function moveFile(
     .update({ folder_id: destination })
     .eq("id", fileId);
 
-  if (error) return { error: "Couldn't move the file. Please try again." };
+  if (error) return dbError("moveFile", error);
 
   // Move the file's block along with it, appended to the end of the
   // destination section's stream (its old position has no meaning there).
@@ -392,7 +429,7 @@ export async function deleteFile(
 
   const { error } = await supabase.from("files").delete().eq("id", fileId);
 
-  if (error) return { error: "Couldn't delete the file. Please try again." };
+  if (error) return dbError("deleteFile", error);
 
   const keys = [file?.storage_key, file?.thumbnail_key].filter(
     (k): k is string => !!k
@@ -428,7 +465,7 @@ export async function createTextBlock(
     font_size: typography?.fontSize ?? null,
   });
 
-  if (error) return { error: "Couldn't add the note. Please try again." };
+  if (error) return dbError("createTextBlock", error);
   revalidateProjectFiles(projectId);
   return { error: null };
 }
@@ -452,7 +489,7 @@ export async function updateBlockContent(
     })
     .eq("id", blockId);
 
-  if (error) return { error: "Couldn't save. Please try again." };
+  if (error) return dbError("updateBlock", error);
   revalidateProjectFiles(projectId);
   return { error: null };
 }
@@ -471,7 +508,7 @@ export async function moveBlockToPosition(
     .update({ sort_order: sortOrder })
     .eq("id", blockId);
 
-  if (error) return { error: "Couldn't reorder. Please try again." };
+  if (error) return dbError("reorder", error);
   revalidateProjectFiles(projectId);
   return { error: null };
 }
@@ -489,7 +526,7 @@ export async function deleteBlockRow(
   const supabase = await createClient();
   const { error } = await supabase.from("blocks").delete().eq("id", blockId);
 
-  if (error) return { error: "Couldn't delete. Please try again." };
+  if (error) return dbError("deleteBlock", error);
   revalidateProjectFiles(projectId);
   return { error: null };
 }
