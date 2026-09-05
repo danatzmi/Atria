@@ -23,8 +23,10 @@ export default async function ProjectsPage() {
       : null,
   }));
 
+  // Full-bleed like the project canvas — no max-width cap, just edge
+  // padding, so the grid keeps filling the screen on wide displays.
   return (
-    <div className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
+    <div className="w-full flex-1 px-6 py-10">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold tracking-tight text-zinc-900">
           Projects
@@ -43,7 +45,10 @@ export default async function ProjectsPage() {
           </p>
         </div>
       ) : (
-        <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-4">
+        // Extra columns past lg: without the max-width cap, four columns on
+        // a wide display stretch each cover to ~600px. More columns keeps a
+        // card the size it was designed at and shows more of the binder.
+        <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
           {projectsWithCovers.map(({ project, coverImageUrl }) => (
             <ProjectCard
               key={project.id}

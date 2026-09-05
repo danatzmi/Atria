@@ -28,7 +28,7 @@ import {
   moveBlockToPosition,
   moveFolderToPosition,
 } from "./actions";
-import { DocumentIcon, PlayIcon, UploadIcon } from "./item-icon";
+import { ChevronIcon, DocumentIcon, PlayIcon, UploadIcon } from "./item-icon";
 import { RenameDialog } from "./rename-dialog";
 import { MoveDialog } from "./move-dialog";
 import { DeleteItemDialog } from "./delete-item-dialog";
@@ -312,6 +312,39 @@ export function FolderBrowser({
     pickFiles((files) => uploadFiles(files, sortOrder));
   }
 
+  // Touch fallback for reordering. HTML5 drag-and-drop is unreliable on
+  // iOS/Android and fights the scroll gesture, so on mobile each item also
+  // gets Up/Down controls. Moves a whole stream item, so a run of photos
+  // rendered as one grid travels together rather than breaking apart:
+  // every block in the run is rewritten to consecutive fractional positions
+  // in the gap on the far side of the neighbor being stepped over.
+  async function moveStreamItem(index: number, direction: -1 | 1) {
+    if (!items[index + direction]) return;
+
+    const moving = items[index];
+    const movingBlocks = moving.kind === "block" ? [moving.block] : moving.blocks;
+
+    // The gap the item is landing in — beyond the neighbor it steps over.
+    let low: number | undefined;
+    let high: number | undefined;
+    if (direction === -1) {
+      low = items[index - 2] ? lastSortOrder(items[index - 2]) : undefined;
+      high = firstSortOrder(items[index - 1]);
+    } else {
+      low = lastSortOrder(items[index + 1]);
+      high = items[index + 2] ? firstSortOrder(items[index + 2]) : undefined;
+    }
+
+    for (const block of movingBlocks) {
+      const target = midpointSortOrder(low, high);
+      await moveBlockToPosition(block.id, projectId, target);
+      // Next block in the run goes after the one just placed, keeping the
+      // run's internal order intact.
+      low = target;
+    }
+    refresh();
+  }
+
   // The payload comes from the drop event's own dataTransfer (see
   // drag-payload.ts), never from `draggingItem` state — dragend can clear
   // that state before or during this handler, and it's only reliable on the
@@ -438,6 +471,14 @@ export function FolderBrowser({
               lives entirely in the BlockGap strip between items instead. */}
           {items.map((item, i) => (
             <Fragment key={streamKey(item)}>
+              {canReorder && items.length > 1 && (
+                <MoveItemButtons
+                  canMoveUp={i > 0}
+                  canMoveDown={i < items.length - 1}
+                  onMoveUp={() => moveStreamItem(i, -1)}
+                  onMoveDown={() => moveStreamItem(i, 1)}
+                />
+              )}
               {item.kind === "block" ? (
                 <BlockItem
                   projectId={projectId}
@@ -684,6 +725,13 @@ function BlockGap({
   onItemsChanged: () => void;
 }) {
   const sortOrder = midpointSortOrder(before, after);
+  // Touch devices have no hover, so the insert bar's buttons are
+  // unreachable there. Rather than leaving them permanently on-screen (which
+  // would put two pills in every gap of every tab), the gap shows a single
+  // faint + on mobile; tapping it swaps in the real buttons for that one
+  // gap. Desktop never reads this state — its md: classes below are purely
+  // hover-driven, exactly as before.
+  const [revealed, setRevealed] = useState(false);
 
   return (
     <div
@@ -725,8 +773,29 @@ function BlockGap({
           isDragOver ? "h-1 bg-stone-500" : "h-0.5 bg-transparent group-hover/gap:bg-stone-200"
         }`}
       />
+      {/* The mobile-only tap target: a single faint +, replaced by the real
+          buttons once tapped. Hidden entirely at md, where hover does this
+          job. */}
+      {!isDragging && !revealed && (
+        <button
+          type="button"
+          onClick={() => setRevealed(true)}
+          aria-label="Insert here"
+          className="relative mx-auto flex h-6 w-6 items-center justify-center rounded-full border border-stone-200 bg-white text-sm leading-none text-stone-400 shadow-sm md:hidden"
+        >
+          +
+        </button>
+      )}
       {!isDragging && (
-        <div className="relative mx-auto flex items-center gap-2 opacity-0 transition-opacity group-hover/gap:opacity-100">
+        <div
+          // Mobile: driven by `revealed`, and untappable until then so an
+          // invisible pill can't swallow a scroll gesture. From md up the
+          // classes reset to the original hover behavior — opacity-0 with
+          // pointer events live, so desktop is byte-for-byte unchanged.
+          className={`relative mx-auto flex items-center gap-2 transition-opacity ${
+            revealed ? "opacity-100" : "pointer-events-none absolute opacity-0"
+          } md:pointer-events-auto md:relative md:opacity-0 md:group-hover/gap:opacity-100`}
+        >
           <BlockFormDialog
             projectId={projectId}
             sectionId={sectionId}
@@ -738,11 +807,55 @@ function BlockGap({
             submitLabel="Add block"
             triggerLabel="+ Text"
             triggerClassName="rounded-full border border-stone-300 bg-white px-2.5 py-0.5 text-xs font-medium text-stone-500 shadow-sm transition-colors hover:bg-stone-50"
-            onSuccess={onItemsChanged}
+            onSuccess={() => {
+              setRevealed(false);
+              onItemsChanged();
+            }}
           />
           <GapUploadButton onUploadFiles={onUploadFiles} sortOrder={sortOrder} />
         </div>
       )}
+    </div>
+  );
+}
+
+// Mobile-only reorder controls, sat just above the card they move. md:hidden
+// keeps them off desktop entirely, where the drag handle already does this
+// and these would be clutter.
+function MoveItemButtons({
+  canMoveUp,
+  canMoveDown,
+  onMoveUp,
+  onMoveDown,
+}: {
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
+}) {
+  const base =
+    "flex h-8 w-8 items-center justify-center rounded-md border border-stone-200 bg-white text-stone-500 shadow-sm transition-colors disabled:opacity-30";
+
+  return (
+    <div className="mb-1 flex justify-end gap-1 md:hidden">
+      <button
+        type="button"
+        onClick={onMoveUp}
+        disabled={!canMoveUp}
+        aria-label="Move up"
+        className={base}
+      >
+        <ChevronIcon className="h-4 w-4 -rotate-90" />
+      </button>
+      <button
+        type="button"
+        onClick={onMoveDown}
+        disabled={!canMoveDown}
+        aria-label="Move down"
+        className={base}
+      >
+        <ChevronIcon className="h-4 w-4 rotate-90" />
+      </button>
     </div>
   );
 }
@@ -928,7 +1041,7 @@ function TextBlockRow({
           // don't inherit the card's grab cursor.
           <div
             draggable={false}
-            className="absolute right-3 top-3 flex cursor-pointer gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+            className="absolute right-3 top-3 flex cursor-pointer gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover:opacity-100"
           >
             <BlockFormDialog
               projectId={projectId}
@@ -1056,7 +1169,7 @@ function PhotoCardBody({
           </div>
         </FileOpenButton>
         {editable && (
-          <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover/photo:opacity-100">
+          <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/photo:opacity-100">
             <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
               <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
             </div>
@@ -1133,7 +1246,9 @@ function PhotoGrid({
   onChanged: () => void;
 }) {
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+    // One column below sm so a photo reads as a photo rather than a
+    // thumbnail; sm/lg are untouched, so nothing changes on desktop.
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-4">
       {blocks.map((block, i) => {
         const predecessorSortOrder = i === 0 ? beforeSortOrder : blocks[i - 1].sort_order;
         const sortOrder = midpointSortOrder(predecessorSortOrder, block.sort_order);
@@ -1287,7 +1402,7 @@ function VideoBlockRow({
           </div>
         </FileOpenButton>
         {editable && (
-          <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover/video:opacity-100">
+          <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/video:opacity-100">
             <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
               <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
             </div>
@@ -1403,7 +1518,7 @@ function DocumentBlockRow({
           <div
             draggable={false}
             onClick={(e) => e.stopPropagation()}
-            className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover/file:opacity-100"
+            className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/file:opacity-100"
           >
             <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
               <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />

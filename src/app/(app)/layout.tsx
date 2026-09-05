@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "../(auth)/actions";
@@ -19,14 +20,23 @@ export default async function AppLayout({
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
-      <header className="flex items-center justify-between border-b border-zinc-200 px-6 py-4 print:hidden">
-        <span className="text-lg font-semibold tracking-tight text-zinc-900">
+      {/* Dark, thin, and the only element that persists across every page —
+          so the wordmark doubles as the way back to the project list. The
+          bottom border is gone: against black it read as a seam rather than
+          a divider, and the color change already separates it. */}
+      {/* py-4 on phones so the wordmark and Sign out clear the ~44px
+          minimum comfortable tap target; back to the thin py-3 at md. */}
+      <header className="flex items-center justify-between bg-zinc-950 px-6 py-4 print:hidden md:py-3">
+        <Link
+          href="/projects"
+          className="text-lg font-semibold tracking-tight text-white transition-opacity hover:opacity-80"
+        >
           Atria
-        </span>
+        </Link>
         <form action={signOut}>
           <button
             type="submit"
-            className="text-sm text-zinc-500 transition-colors hover:text-zinc-900"
+            className="text-sm text-zinc-400 transition-colors hover:text-white"
           >
             Sign out
           </button>

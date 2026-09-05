@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getSubtabCounts, getTabCounts, getTabContents } from "./folder/actions";
 import type { FolderRow } from "./folder/data";
@@ -77,6 +77,64 @@ export function BinderWorkspace({
   // canvas the full width. Deliberately separate from mobileDrawerOpen:
   // below md the sidebar is a drawer and this has no effect at all.
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
+  // Edge-swipe to open the tabs drawer — the gesture people already expect
+  // from every mobile app, instead of reaching for the hamburger.
+  //
+  // Three guards keep it from stealing ordinary gestures: it only arms below
+  // the md breakpoint (desktop has a static sidebar and never sees this), the
+  // touch must START within EDGE_PX of the left edge, and the moment vertical
+  // travel exceeds horizontal the gesture is abandoned so page scrolling wins.
+  // Listeners are passive — this never calls preventDefault, so it can't make
+  // scrolling feel sticky.
+  useEffect(() => {
+    const EDGE_PX = 24;
+    const TRIGGER_PX = 60;
+    let startX = 0;
+    let startY = 0;
+    let tracking = false;
+
+    function onTouchStart(e: TouchEvent) {
+      if (window.innerWidth >= 768) return;
+      const touch = e.touches[0];
+      if (!touch || touch.clientX > EDGE_PX) return;
+      startX = touch.clientX;
+      startY = touch.clientY;
+      tracking = true;
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      if (!tracking) return;
+      const touch = e.touches[0];
+      if (!touch) return;
+      const dx = touch.clientX - startX;
+      const dy = touch.clientY - startY;
+      // Reading as a vertical scroll — hand it back to the page.
+      if (Math.abs(dy) > Math.abs(dx)) {
+        tracking = false;
+        return;
+      }
+      if (dx > TRIGGER_PX) {
+        tracking = false;
+        setMobileDrawerOpen(true);
+      }
+    }
+
+    function stop() {
+      tracking = false;
+    }
+
+    window.addEventListener("touchstart", onTouchStart, { passive: true });
+    window.addEventListener("touchmove", onTouchMove, { passive: true });
+    window.addEventListener("touchend", stop, { passive: true });
+    window.addEventListener("touchcancel", stop, { passive: true });
+    return () => {
+      window.removeEventListener("touchstart", onTouchStart);
+      window.removeEventListener("touchmove", onTouchMove);
+      window.removeEventListener("touchend", stop);
+      window.removeEventListener("touchcancel", stop);
+    };
+  }, []);
 
   // A Tab itself was created/renamed/deleted, or a mutation happened
   // somewhere inside an open Tab (bubbled up so the sidebar's list and
