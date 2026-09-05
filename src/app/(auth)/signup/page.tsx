@@ -76,6 +76,12 @@ export default function SignupPage() {
             <p className="text-sm text-red-600">{state.error}</p>
           )}
 
+          {state.notice && (
+            <p className="rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-700">
+              {state.notice}
+            </p>
+          )}
+
           <button
             type="submit"
             disabled={pending}
