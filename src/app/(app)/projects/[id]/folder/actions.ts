@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/server";
 import {
   createSignedUrl,
   createSignedUrls,
-  IMAGE_PREVIEW_WIDTH,
   PROJECT_FILES_BUCKET,
 } from "@/lib/supabase/storage";
 import { classifyMimeType } from "@/lib/files";
@@ -596,10 +595,7 @@ export async function getTabContents(
   const imageKeys = blocks
     .filter((b) => b.type === "image" && b.file)
     .map((b) => b.file!.storage_key);
-  // Resized renditions: these back <img> previews in the canvas, never a
-  // download. Full-resolution originals stay reachable via
-  // getFileDownloadUrl and the PDF export.
-  const imageUrlMap = await createSignedUrls(supabase, imageKeys, IMAGE_PREVIEW_WIDTH);
+  const imageUrlMap = await createSignedUrls(supabase, imageKeys);
 
   return { folders, blocks, imageUrls: Object.fromEntries(imageUrlMap) };
 }

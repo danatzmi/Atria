@@ -9,6 +9,7 @@ import {
   useTransition,
   type ReactNode,
 } from "react";
+import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import {
   buildStorageKey,
@@ -525,7 +526,13 @@ function AddMenu({
             onClick={() => setOpen(false)}
             className="fixed inset-0 z-10 cursor-default"
           />
-          <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-stone-200 bg-white py-1 shadow-lg">
+          {/* Anchored to whichever side keeps the menu on screen, switching
+              at the same `sm` breakpoint the header row itself does. Below
+              sm the search box takes a full row, so "+ Add" wraps to the
+              LEFT edge — anchoring the menu's right edge there would hang
+              most of its 11rem off the left of the screen. From sm up the
+              controls sit at the right, where the opposite is true. */}
+          <div className="absolute left-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-stone-200 bg-white py-1 shadow-lg sm:left-auto sm:right-0">
             <BlockFormDialog
               projectId={projectId}
               sectionId={folderId}
@@ -835,15 +842,20 @@ function PhotoCardBody({
           fileId={file.id}
           className="flex w-full flex-col overflow-hidden rounded-md border border-stone-200 bg-white p-1.5 text-left shadow-sm transition-shadow hover:shadow-md disabled:opacity-60"
         >
-          <div className="aspect-square w-full overflow-hidden rounded-sm bg-stone-50">
+          <div className="relative aspect-square w-full overflow-hidden rounded-sm bg-stone-50">
             {imageUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
+              // The payload that actually hurt: a tab of ten 4MB phone photos
+              // used to ship ~40MB to draw ten small squares. next/image has
+              // the server fetch the original and hand the browser a resized
+              // WebP instead. Still lazy by default, so photos below the fold
+              // cost nothing until scrolled to.
+              <Image
                 src={imageUrl}
                 alt={file.name}
-                loading="lazy"
+                fill
+                sizes="(min-width: 1024px) 25vw, (min-width: 640px) 33vw, 100vw"
                 draggable={false}
-                className="pointer-events-none h-full w-full select-none object-cover transition-transform duration-300 group-hover/photo:scale-105"
+                className="pointer-events-none select-none object-cover transition-transform duration-300 group-hover/photo:scale-105"
               />
             )}
           </div>

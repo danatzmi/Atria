@@ -73,33 +73,37 @@ export async function getFolderContents(
 // (tab) in the project, keyed by tab id — backs each divider row's count
 // badge. Counts direct children only, matching how the rest of the browser
 // never aggregates recursively.
+// One row per folder, aggregated in the database — see
+// migrations/0006_tab_item_counts.sql for why this isn't done in Node.
+type TabCountRow = {
+  folder_id: string;
+  item_count: number | string;
+  subtab_count: number | string;
+};
+
+async function fetchTabCountRows(
+  supabase: SupabaseClient,
+  projectId: string
+): Promise<TabCountRow[]> {
+  const { data, error } = await supabase.rpc("tab_item_counts", {
+    p_project_id: projectId,
+  });
+  if (error) {
+    console.error("[atria] tab_item_counts failed:", error);
+    return [];
+  }
+  return (data ?? []) as TabCountRow[];
+}
+
+// Direct children of each tab — sub-tabs AND blocks — for the sidebar badge.
 export async function getTabItemCounts(
   supabase: SupabaseClient,
   projectId: string
 ): Promise<Record<string, number>> {
-  const [{ data: folders }, { data: blocks }] = await Promise.all([
-    supabase
-      .from("folders")
-      .select("parent_folder_id")
-      .eq("project_id", projectId)
-      .not("parent_folder_id", "is", null),
-    supabase
-      .from("blocks")
-      .select("section_id")
-      .eq("project_id", projectId)
-      .not("section_id", "is", null),
-  ]);
-
   const counts: Record<string, number> = {};
-  for (const f of folders ?? []) {
-    if (f.parent_folder_id) {
-      counts[f.parent_folder_id] = (counts[f.parent_folder_id] ?? 0) + 1;
-    }
-  }
-  for (const b of blocks ?? []) {
-    if (b.section_id) {
-      counts[b.section_id] = (counts[b.section_id] ?? 0) + 1;
-    }
+  for (const row of await fetchTabCountRows(supabase, projectId)) {
+    // count(*) is bigint; PostgREST may hand it back as a string.
+    counts[row.folder_id] = Number(row.item_count);
   }
   return counts;
 }
@@ -154,21 +158,17 @@ export async function getFolderDescendantIds(
 // number. The sidebar needs to know whether a tab has any *sub-tabs* before
 // it's ever expanded (chevron vs. dot), and a merged count can't answer
 // that: a tab holding only photos would wrongly look expandable.
+// Sub-tabs only. Deliberately separate from getTabItemCounts: this one
+// answers "does this tab have children to expand?", so counting blocks here
+// would put a chevron on a tab that has nothing nested inside it.
 export async function getSubtabItemCounts(
   supabase: SupabaseClient,
   projectId: string
 ): Promise<Record<string, number>> {
-  const { data: folders } = await supabase
-    .from("folders")
-    .select("parent_folder_id")
-    .eq("project_id", projectId)
-    .not("parent_folder_id", "is", null);
-
   const counts: Record<string, number> = {};
-  for (const f of folders ?? []) {
-    if (f.parent_folder_id) {
-      counts[f.parent_folder_id] = (counts[f.parent_folder_id] ?? 0) + 1;
-    }
+  for (const row of await fetchTabCountRows(supabase, projectId)) {
+    const n = Number(row.subtab_count);
+    if (n > 0) counts[row.folder_id] = n;
   }
   return counts;
 }

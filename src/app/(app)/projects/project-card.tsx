@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 import { ProjectFormDialog } from "./project-form-dialog";
 import { DeleteProjectDialog } from "./delete-project-dialog";
@@ -18,19 +19,21 @@ export function ProjectCard({
   return (
     <div className="group relative">
       <Link href={`/projects/${project.id}`} className="block">
-        <div className="aspect-[4/3] overflow-hidden rounded-lg bg-zinc-100">
+        <div className="relative aspect-[4/3] overflow-hidden rounded-lg bg-zinc-100">
           {coverImageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            // next/image, not a raw <img>: covers are multi-megabyte phone
+            // photos and this card renders them a few hundred pixels wide.
+            // Vercel's optimizer fetches the original server-side and serves
+            // a resized WebP, which is the same win Supabase's transform API
+            // would give without needing a paid Supabase plan. `sizes` is what
+            // tells it how small it can go — the widths mirror the grid's
+            // breakpoints in projects/page.tsx.
+            <Image
               src={coverImageUrl}
               alt=""
-              // A full grid of projects is a lot of covers; without this the
-              // browser fetches every one on load, including the rows nobody
-              // has scrolled to. Unlike the resize above, this needs no
-              // Supabase plan features.
-              loading="lazy"
-              decoding="async"
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              fill
+              sizes="(min-width: 1536px) 16vw, (min-width: 1280px) 20vw, (min-width: 1024px) 25vw, (min-width: 640px) 33vw, 50vw"
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center">

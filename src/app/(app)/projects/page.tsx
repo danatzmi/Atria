@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { createSignedUrls, IMAGE_COVER_WIDTH } from "@/lib/supabase/storage";
+import { createSignedUrls } from "@/lib/supabase/storage";
 import { ProjectFormDialog } from "./project-form-dialog";
 import { ProjectCard } from "./project-card";
 
@@ -14,9 +14,7 @@ export default async function ProjectsPage() {
   const coverKeys = (projects ?? [])
     .map((p) => p.cover_image)
     .filter((key): key is string => !!key);
-  // Cover art for grid cards — a few hundred CSS px each, so there's no
-  // reason to ship the 4MB original.
-  const signedUrls = await createSignedUrls(supabase, coverKeys, IMAGE_COVER_WIDTH);
+  const signedUrls = await createSignedUrls(supabase, coverKeys);
 
   const projectsWithCovers = (projects ?? []).map((project) => ({
     project,

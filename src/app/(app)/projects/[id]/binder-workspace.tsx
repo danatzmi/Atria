@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getSubtabCounts, getTabCounts, getTabContents } from "./folder/actions";
@@ -285,8 +286,17 @@ function ProjectOverview({
     <div className="w-full">
       <div className="relative aspect-[3/1] w-full overflow-hidden rounded-xl bg-zinc-100">
         {coverImageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={coverImageUrl} alt="" className="h-full w-full object-cover" />
+          // Optimized via next/image — see project-card.tsx for the reasoning.
+          // One wide banner, so it's the page's largest image: `priority`
+          // skips lazy-loading and lets it start downloading immediately.
+          <Image
+            src={coverImageUrl}
+            alt=""
+            fill
+            priority
+            sizes="(min-width: 768px) 768px, 100vw"
+            className="object-cover"
+          />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
             <svg
