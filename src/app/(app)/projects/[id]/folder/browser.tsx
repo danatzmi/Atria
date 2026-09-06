@@ -7,7 +7,6 @@ import {
   useMemo,
   useState,
   useTransition,
-  type DragEvent,
   type ReactNode,
 } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -19,14 +18,12 @@ import {
 import { formatBytes, getFormatLabel } from "@/lib/files";
 import { renderBlockContent, tryParseDocJSON } from "@/lib/doc-content";
 import { midpointSortOrder } from "@/lib/sort-order";
-import { readDragPayload, setDragPayload, type DragPayload } from "@/lib/drag-payload";
 import { blockMatchesQuery, type BlockRow, type FileRow, type FolderRow } from "./data";
 import {
   createFileRecord,
   getFileDownloadUrl,
   getTabContents,
   moveBlockToPosition,
-  moveFolderToPosition,
 } from "./actions";
 import { ChevronIcon, DocumentIcon, PlayIcon, UploadIcon } from "./item-icon";
 import { RenameDialog } from "./rename-dialog";
@@ -88,8 +85,8 @@ type UploadItem = {
 // The Main Canvas's content for one Tab, Sub-tab, or the virtual Unsorted
 // view: a compact header (name/index/search/"+ Add"/rename/delete), then
 // this level's own block stream — text and file blocks, in the user's own
-// order — with a Jupyter-style hover insert-bar between blocks and
-// drag-and-drop reordering via each block's grip handle. Always the canvas
+// order. Content is appended via the header's "+ Add"; order is changed
+// with each card's Up/Down controls. Always the canvas
 // ROOT (the only caller is binder-workspace.tsx): Tab/Sub-tab structure and
 // navigation live entirely in the persistent left sidebar
 // (project-sidebar.tsx), not here, so this component never renders another
@@ -123,9 +120,9 @@ export function FolderBrowser({
   // sub-tab never affects its grandparent's badge.
   onItemsChanged?: () => void;
   // View Mode vs Edit Mode (project-page-level toggle, threaded straight
-  // down): false hides every insert bar, drag handle, and edit/rename/
-  // move/delete affordance at every level, leaving a clean read-only
-  // presentation view. Everything stays fully readable/navigable either way.
+  // down): false hides the reorder controls and every edit/rename/move/
+  // delete affordance, leaving a clean read-only presentation view.
+  // Everything stays fully readable/navigable either way.
   editable: boolean;
 }) {
   const isUnsorted = folderId === null;
@@ -140,9 +137,6 @@ export function FolderBrowser({
   const [query, setQuery] = useState("");
   const [queue, setQueue] = useState<UploadItem[]>([]);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
-  const [draggingItem, setDraggingItem] = useState<DragPayload | null>(null);
-  const [dragOverGap, setDragOverGap] = useState<number | null>(null);
-  const [dragOverBlockId, setDragOverBlockId] = useState<string | null>(null);
 
   const fetchSelf = useCallback(() => {
     startTransition(async () => {
@@ -154,71 +148,6 @@ export function FolderBrowser({
   useEffect(() => {
     fetchSelf();
   }, [fetchSelf]);
-
-  // Auto-scroll while a block is mid-drag: holding the pointer near the top
-  // or bottom edge of the viewport scrolls the page, so an item can be
-  // moved to a gap that's currently off-screen. Native HTML5 drag suppresses
-  // normal wheel/scroll gestures, so without this a long tab can only be
-  // reordered within one screenful. Bound to window (not this subtree) so
-  // it keeps working once the pointer leaves the stream, and only while a
-  // drag is actually in progress.
-  useEffect(() => {
-    if (draggingItem === null) return;
-
-    let animationFrameId: number | null = null;
-    let scrollSpeed = 0;
-
-    const SCROLL_ZONE_PX = 90;
-    const MAX_SPEED = 18;
-
-    // globalThis.DragEvent, not React's synthetic DragEvent imported at the
-    // top of this file — this is a raw DOM listener.
-    function handleWindowDragOver(e: globalThis.DragEvent) {
-      const y = e.clientY;
-      const height = window.innerHeight;
-
-      if (y < SCROLL_ZONE_PX) {
-        const intensity = (SCROLL_ZONE_PX - y) / SCROLL_ZONE_PX;
-        scrollSpeed = -Math.max(4, Math.round(intensity * MAX_SPEED));
-      } else if (y > height - SCROLL_ZONE_PX) {
-        const intensity = (y - (height - SCROLL_ZONE_PX)) / SCROLL_ZONE_PX;
-        scrollSpeed = Math.max(4, Math.round(intensity * MAX_SPEED));
-      } else {
-        scrollSpeed = 0;
-      }
-
-      if (scrollSpeed !== 0 && animationFrameId === null) {
-        const step = () => {
-          if (scrollSpeed !== 0) {
-            window.scrollBy(0, scrollSpeed);
-            animationFrameId = requestAnimationFrame(step);
-          } else {
-            animationFrameId = null;
-          }
-        };
-        animationFrameId = requestAnimationFrame(step);
-      }
-    }
-
-    function stopScrolling() {
-      scrollSpeed = 0;
-      if (animationFrameId !== null) {
-        cancelAnimationFrame(animationFrameId);
-        animationFrameId = null;
-      }
-    }
-
-    window.addEventListener("dragover", handleWindowDragOver);
-    window.addEventListener("dragend", stopScrolling);
-    window.addEventListener("drop", stopScrolling);
-
-    return () => {
-      stopScrolling();
-      window.removeEventListener("dragover", handleWindowDragOver);
-      window.removeEventListener("dragend", stopScrolling);
-      window.removeEventListener("drop", stopScrolling);
-    };
-  }, [draggingItem]);
 
   function refresh() {
     fetchSelf();
@@ -345,17 +274,6 @@ export function FolderBrowser({
     refresh();
   }
 
-  // The payload comes from the drop event's own dataTransfer (see
-  // drag-payload.ts), never from `draggingItem` state — dragend can clear
-  // that state before or during this handler, and it's only reliable on the
-  // drag's source element anyway, not the drop target.
-  async function handleDrop(payload: DragPayload, sortOrder: number) {
-    setDraggingItem(null);
-    if (payload.kind === "block") await moveBlockToPosition(payload.id, projectId, sortOrder);
-    else await moveFolderToPosition(payload.id, projectId, sortOrder);
-    refresh();
-  }
-
   if (!data) {
     return <p className="py-8 text-center text-sm text-stone-400">Loading…</p>;
   }
@@ -446,29 +364,11 @@ export function FolderBrowser({
           </p>
         )
       ) : (
-        <div className="mt-6">
-          {canReorder && items.length > 0 && (
-            <BlockGap
-              projectId={projectId}
-              sectionId={folderId}
-              before={undefined}
-              after={firstSortOrder(items[0])}
-              isDragging={draggingItem !== null}
-              isDragOver={dragOverGap === 0}
-              onDragOverGap={() => setDragOverGap(0)}
-              onDragLeaveGap={() => setDragOverGap((g) => (g === 0 ? null : g))}
-              onDrop={handleDrop}
-              onUploadFiles={uploadFiles}
-              onItemsChanged={refresh}
-            />
-          )}
-          {/* Cards themselves are drag *sources* only (onDragStart/onDragEnd)
-              — not also onDragOver drop targets. A card wrapper that listens
-              for onDragOver fires it on itself in the first pixel of its own
-              drag gesture (the pointer is still over the card it just
-              started dragging), and the resulting setState/re-render can
-              abort the native drag entirely in Chrome/Safari. Reordering
-              lives entirely in the BlockGap strip between items instead. */}
+        // A plain top-to-bottom pile. New content is appended by "+ Add" in
+        // the header; existing content is rearranged with each card's own
+        // Up/Down controls. There is no insert-between affordance and no
+        // drag-reordering — see MoveItemButtons for why.
+        <div className="mt-6 space-y-4">
           {items.map((item, i) => (
             <Fragment key={streamKey(item)}>
               {canReorder && items.length > 1 && (
@@ -484,44 +384,16 @@ export function FolderBrowser({
                   projectId={projectId}
                   block={item.block}
                   imageUrl={item.block.file ? imageUrls[item.block.file.storage_key] : undefined}
-                  draggable={canReorder}
                   editable={editable}
-                  isDragging={draggingItem?.kind === "block" && draggingItem.id === item.block.id}
-                  onDragStartBlock={() => setDraggingItem({ kind: "block", id: item.block.id })}
-                  onDragEndBlock={() => setDraggingItem(null)}
                   onChanged={refresh}
                 />
               ) : (
                 <PhotoGrid
                   projectId={projectId}
                   blocks={item.blocks}
-                  beforeSortOrder={i === 0 ? undefined : lastSortOrder(items[i - 1])}
                   imageUrls={imageUrls}
-                  draggable={canReorder}
                   editable={editable}
-                  draggingBlockId={draggingItem?.kind === "block" ? draggingItem.id : null}
-                  dragOverBlockId={dragOverBlockId}
-                  onDragStartBlock={(id) => setDraggingItem({ kind: "block", id })}
-                  onDragEndBlock={() => setDraggingItem(null)}
-                  onDragOverBlock={setDragOverBlockId}
-                  onDragLeaveBlock={() => setDragOverBlockId(null)}
-                  onDropBlock={handleDrop}
                   onChanged={refresh}
-                />
-              )}
-              {canReorder && (
-                <BlockGap
-                  projectId={projectId}
-                  sectionId={folderId}
-                  before={lastSortOrder(item)}
-                  after={items[i + 1] ? firstSortOrder(items[i + 1]) : undefined}
-                  isDragging={draggingItem !== null}
-                  isDragOver={dragOverGap === i + 1}
-                  onDragOverGap={() => setDragOverGap(i + 1)}
-                  onDragLeaveGap={() => setDragOverGap((g) => (g === i + 1 ? null : g))}
-                  onDrop={handleDrop}
-                  onUploadFiles={uploadFiles}
-                  onItemsChanged={refresh}
                 />
               )}
             </Fragment>
@@ -602,7 +474,9 @@ function SearchBox({
 // The canvas header's "+ Add" control — a compact menu instead of three
 // always-visible buttons, so the header stays a single tidy row. Each item
 // reuses the exact same trigger components as the hover insert-bar
-// (BlockGap) and the empty-state actions below, just restyled as menu rows.
+// the empty-state actions below, just restyled as menu rows. Since the
+// insert-bars are gone, this is the only way to add content — everything it
+// creates is appended to the end of the section.
 function AddMenu({
   projectId,
   folderId,
@@ -693,135 +567,14 @@ function AddMenu({
   );
 }
 
-// The hover insert-bar between two blocks (and before the first / after the
-// last, which doubles as "the bottom of the page"). Also a drop target: OS
-// files land here as new File blocks at exactly this position, and a block
-// being dragged by its grip handle reorders to here.
-function BlockGap({
-  projectId,
-  sectionId,
-  before,
-  after,
-  isDragging,
-  isDragOver,
-  onDragOverGap,
-  onDragLeaveGap,
-  onDrop,
-  onUploadFiles,
-  onItemsChanged,
-}: {
-  projectId: string;
-  sectionId: string | null;
-  // The stream neighbors' sort_order — a plain number rather than a
-  // BlockRow, since a gap's neighbor may just as well be a sub-tab now.
-  before?: number;
-  after?: number;
-  isDragging: boolean;
-  isDragOver: boolean;
-  onDragOverGap: () => void;
-  onDragLeaveGap: () => void;
-  onDrop: (payload: DragPayload, sortOrder: number) => void;
-  onUploadFiles: (files: FileList, sortOrder: number) => void;
-  onItemsChanged: () => void;
-}) {
-  const sortOrder = midpointSortOrder(before, after);
-  // Touch devices have no hover, so the insert bar's buttons are
-  // unreachable there. Rather than leaving them permanently on-screen (which
-  // would put two pills in every gap of every tab), the gap shows a single
-  // faint + on mobile; tapping it swaps in the real buttons for that one
-  // gap. Desktop never reads this state — its md: classes below are purely
-  // hover-driven, exactly as before.
-  const [revealed, setRevealed] = useState(false);
-
-  return (
-    <div
-      // Generous vertical hitbox — a drop target only 4px tall (py-1) is
-      // easy to overshoot; py-3 gives roughly 3x the catchable area without
-      // visibly disrupting the stream's spacing normally. While a drag is
-      // actually in progress, this is the *only* drop target in the stream
-      // (cards themselves aren't — see FolderBrowser's comment on why), so
-      // it grows further still to a fixed, generous h-6 to stay easy to hit.
-      className={`group/gap relative flex items-center overflow-hidden rounded-md transition-all ${
-        isDragging ? "h-6" : "py-3"
-      } ${isDragOver ? "bg-stone-100" : ""}`}
-      onDragOver={(e) => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = "move";
-        onDragOverGap();
-      }}
-      onDragLeave={(e) => {
-        // dragleave fires when the cursor crosses onto a CHILD element too
-        // (the insert-bar buttons) — not just when it truly exits the gap —
-        // so without this guard the indicator flickers off mid-hover.
-        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-        onDragLeaveGap();
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onDragLeaveGap();
-        if (e.dataTransfer.files.length > 0) {
-          onUploadFiles(e.dataTransfer.files, sortOrder);
-          return;
-        }
-        const payload = readDragPayload(e);
-        if (payload) onDrop(payload, sortOrder);
-      }}
-    >
-      <div
-        className={`absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-full transition-all ${
-          isDragOver ? "h-1 bg-stone-500" : "h-0.5 bg-transparent group-hover/gap:bg-stone-200"
-        }`}
-      />
-      {/* The mobile-only tap target: a single faint +, replaced by the real
-          buttons once tapped. Hidden entirely at md, where hover does this
-          job. */}
-      {!isDragging && !revealed && (
-        <button
-          type="button"
-          onClick={() => setRevealed(true)}
-          aria-label="Insert here"
-          className="relative mx-auto flex h-6 w-6 items-center justify-center rounded-full border border-stone-200 bg-white text-sm leading-none text-stone-400 shadow-sm md:hidden"
-        >
-          +
-        </button>
-      )}
-      {!isDragging && (
-        <div
-          // Mobile: driven by `revealed`, and untappable until then so an
-          // invisible pill can't swallow a scroll gesture. From md up the
-          // classes reset to the original hover behavior — opacity-0 with
-          // pointer events live, so desktop is byte-for-byte unchanged.
-          className={`relative mx-auto flex items-center gap-2 transition-opacity ${
-            revealed ? "opacity-100" : "pointer-events-none absolute opacity-0"
-          } md:pointer-events-auto md:relative md:opacity-0 md:group-hover/gap:opacity-100`}
-        >
-          <BlockFormDialog
-            projectId={projectId}
-            sectionId={sectionId}
-            sortOrder={sortOrder}
-            mode="create"
-            kind="text"
-            dialogTitle="New text block"
-            placeholder="Write anything worth remembering about this tab…"
-            submitLabel="Add block"
-            triggerLabel="+ Text"
-            triggerClassName="rounded-full border border-stone-300 bg-white px-2.5 py-0.5 text-xs font-medium text-stone-500 shadow-sm transition-colors hover:bg-stone-50"
-            onSuccess={() => {
-              setRevealed(false);
-              onItemsChanged();
-            }}
-          />
-          <GapUploadButton onUploadFiles={onUploadFiles} sortOrder={sortOrder} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Mobile-only reorder controls, sat just above the card they move. md:hidden
-// keeps them off desktop entirely, where the drag handle already does this
-// and these would be clutter.
+// The only way to reorder, on every viewport. Native HTML5 drag used to do
+// this on desktop via a drop strip between cards, but that strip was also
+// the insert-between affordance this product deliberately dropped, and
+// cards can't safely become drop targets themselves — a card that listens
+// for its own dragover aborts the drag in Chrome/Safari. Explicit Up/Down
+// is dull, reliable, works identically under a finger and a mouse, and
+// suits a "pile of things you nudge into order" far better than a block
+// editor's drag choreography.
 function MoveItemButtons({
   canMoveUp,
   canMoveDown,
@@ -837,7 +590,7 @@ function MoveItemButtons({
     "flex h-8 w-8 items-center justify-center rounded-md border border-stone-200 bg-white text-stone-500 shadow-sm transition-colors disabled:opacity-30";
 
   return (
-    <div className="mb-1 flex justify-end gap-1 md:hidden">
+    <div className="mb-1 flex justify-end gap-1">
       <button
         type="button"
         onClick={onMoveUp}
@@ -857,24 +610,6 @@ function MoveItemButtons({
         <ChevronIcon className="h-4 w-4 rotate-90" />
       </button>
     </div>
-  );
-}
-
-function GapUploadButton({
-  onUploadFiles,
-  sortOrder,
-}: {
-  onUploadFiles: (files: FileList, sortOrder: number) => void;
-  sortOrder: number;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => pickFiles((files) => onUploadFiles(files, sortOrder))}
-      className="rounded-full border border-stone-300 bg-white px-2.5 py-0.5 text-xs font-medium text-stone-500 shadow-sm transition-colors hover:bg-stone-50"
-    >
-      + Upload File
-    </button>
   );
 }
 
@@ -902,40 +637,21 @@ function BlockItem({
   projectId,
   block,
   imageUrl,
-  draggable,
   editable,
-  isDragging,
-  onDragStartBlock,
-  onDragEndBlock,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
   imageUrl?: string;
-  draggable: boolean;
   editable: boolean;
-  isDragging: boolean;
-  onDragStartBlock: () => void;
-  onDragEndBlock: () => void;
   onChanged: () => void;
 }) {
-  const handleDragStart = (e: DragEvent) => {
-    setDragPayload(e, { kind: "block", id: block.id });
-    onDragStartBlock();
-  };
-
-  const opacity = isDragging ? "opacity-40" : "";
-
   switch (block.type) {
     case "text":
       return (
         <TextBlockRow
           projectId={projectId}
           block={block}
-          draggable={draggable}
-          onDragStart={handleDragStart}
-          onDragEnd={onDragEndBlock}
-          className={opacity}
           editable={editable}
           onChanged={onChanged}
         />
@@ -946,10 +662,6 @@ function BlockItem({
           projectId={projectId}
           block={block}
           imageUrl={imageUrl}
-          draggable={draggable}
-          onDragStart={handleDragStart}
-          onDragEnd={onDragEndBlock}
-          className={opacity}
           editable={editable}
           onChanged={onChanged}
         />
@@ -959,10 +671,6 @@ function BlockItem({
         <VideoBlockRow
           projectId={projectId}
           block={block}
-          draggable={draggable}
-          onDragStart={handleDragStart}
-          onDragEnd={onDragEndBlock}
-          className={opacity}
           editable={editable}
           onChanged={onChanged}
         />
@@ -972,10 +680,6 @@ function BlockItem({
         <DocumentBlockRow
           projectId={projectId}
           block={block}
-          draggable={draggable}
-          onDragStart={handleDragStart}
-          onDragEnd={onDragEndBlock}
-          className={opacity}
           editable={editable}
           onChanged={onChanged}
         />
@@ -989,24 +693,16 @@ function BlockItem({
 function TextBlockRow({
   projectId,
   block,
-  draggable,
-  onDragStart,
-  onDragEnd,
-  className,
   editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
-  draggable: boolean;
-  onDragStart: (e: DragEvent) => void;
-  onDragEnd: () => void;
-  className?: string;
   editable: boolean;
   onChanged: () => void;
 }) {
   return (
-    <div className={`group flex items-start ${className ?? ""}`}>
+    <div className="group flex items-start">
       {/* The card body IS the drag source — there's no separate grip.
           select-none matters here specifically: a mousedown landing on the
           prose would otherwise start a native text-selection gesture that
@@ -1014,12 +710,7 @@ function TextBlockRow({
           that a note's text can no longer be selected/copied straight off
           the card — the Edit dialog is where its text is reachable. */}
       <div
-        className={`relative flex-1 rounded-lg border border-stone-200 bg-amber-50/40 p-4 shadow-sm ${
-          draggable ? "cursor-grab select-none active:cursor-grabbing" : ""
-        }`}
-        draggable={draggable}
-        onDragStart={draggable ? onDragStart : undefined}
-        onDragEnd={draggable ? onDragEnd : undefined}
+        className="relative flex-1 rounded-lg border border-stone-200 bg-amber-50/40 p-4 shadow-sm"
       >
         <div
           className={
@@ -1080,20 +771,12 @@ function PhotoBlockRow({
   projectId,
   block,
   imageUrl,
-  draggable,
-  onDragStart,
-  onDragEnd,
-  className,
   editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
   imageUrl?: string;
-  draggable: boolean;
-  onDragStart: (e: DragEvent) => void;
-  onDragEnd: () => void;
-  className?: string;
   editable: boolean;
   onChanged: () => void;
 }) {
@@ -1101,7 +784,7 @@ function PhotoBlockRow({
   if (!file) return null;
 
   return (
-    <div className={`group flex items-start ${className ?? ""}`}>
+    <div className="group flex items-start">
       {/* The card itself is the drag source. select-none matters here —
           without it, a mousedown that lands on the caption text starts a
           native text-selection gesture instead of (or racing) the drag,
@@ -1109,10 +792,7 @@ function PhotoBlockRow({
           Move/Delete/View) stay clickable: a plain click never starts an
           HTML5 drag, only a click-and-move gesture. */}
       <div
-        className={`w-full max-w-xs flex-1 ${draggable ? "cursor-grab select-none active:cursor-grabbing" : ""}`}
-        draggable={draggable}
-        onDragStart={draggable ? onDragStart : undefined}
-        onDragEnd={draggable ? onDragEnd : undefined}
+        className="w-full max-w-xs flex-1"
       >
         <PhotoCardBody
           projectId={projectId}
@@ -1207,70 +887,36 @@ function PhotoCardBody({
 }
 
 // A run of 2+ consecutive Photo blocks — flows side-by-side as a gallery
-// grid instead of one-per-row. Each card keeps its own grip (an overlay
-// badge here, since there's no per-row column to put it in) and is itself a
-// drop target: dropping onto a card inserts before it, using the same
-// fractional sort_order math as the gaps around the grid — the only way to
-// reorder within a grid, since a between-cell zone doesn't fit a CSS grid.
+// grid instead of one-per-row. The whole run moves as a single unit via the
+// stream's Up/Down controls; there's no reordering *within* a run, which is
+// the one capability the drag removal gave up.
 function PhotoGrid({
   projectId,
   blocks,
-  beforeSortOrder,
   imageUrls,
-  draggable,
   editable,
-  draggingBlockId,
-  dragOverBlockId,
-  onDragStartBlock,
-  onDragEndBlock,
-  onDragOverBlock,
-  onDragLeaveBlock,
-  onDropBlock,
   onChanged,
 }: {
   projectId: string;
   blocks: BlockRow[];
-  // The stream's preceding neighbor's sort_order — a plain number, since
-  // that neighbor may be a sub-tab, not another block.
-  beforeSortOrder?: number;
   imageUrls: Record<string, string>;
-  draggable: boolean;
   editable: boolean;
-  draggingBlockId: string | null;
-  dragOverBlockId: string | null;
-  onDragStartBlock: (id: string) => void;
-  onDragEndBlock: () => void;
-  onDragOverBlock: (id: string) => void;
-  onDragLeaveBlock: () => void;
-  onDropBlock: (payload: DragPayload, sortOrder: number) => void;
   onChanged: () => void;
 }) {
   return (
     // One column below sm so a photo reads as a photo rather than a
     // thumbnail; sm/lg are untouched, so nothing changes on desktop.
     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-      {blocks.map((block, i) => {
-        const predecessorSortOrder = i === 0 ? beforeSortOrder : blocks[i - 1].sort_order;
-        const sortOrder = midpointSortOrder(predecessorSortOrder, block.sort_order);
-        return (
-          <PhotoGridItem
-            key={block.id}
-            projectId={projectId}
-            block={block}
-            imageUrl={block.file ? imageUrls[block.file.storage_key] : undefined}
-            draggable={draggable}
-            editable={editable}
-            isDragging={draggingBlockId === block.id}
-            isDragOver={dragOverBlockId === block.id}
-            onDragStartBlock={() => onDragStartBlock(block.id)}
-            onDragEndBlock={onDragEndBlock}
-            onDragOverBlock={() => onDragOverBlock(block.id)}
-            onDragLeaveBlock={onDragLeaveBlock}
-            onDropOnBlock={(payload) => onDropBlock(payload, sortOrder)}
-            onChanged={onChanged}
-          />
-        );
-      })}
+      {blocks.map((block) => (
+        <PhotoGridItem
+          key={block.id}
+          projectId={projectId}
+          block={block}
+          imageUrl={block.file ? imageUrls[block.file.storage_key] : undefined}
+          editable={editable}
+          onChanged={onChanged}
+        />
+      ))}
     </div>
   );
 }
@@ -1279,70 +925,20 @@ function PhotoGridItem({
   projectId,
   block,
   imageUrl,
-  draggable,
   editable,
-  isDragging,
-  isDragOver,
-  onDragStartBlock,
-  onDragEndBlock,
-  onDragOverBlock,
-  onDragLeaveBlock,
-  onDropOnBlock,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
   imageUrl?: string;
-  draggable: boolean;
   editable: boolean;
-  isDragging: boolean;
-  isDragOver: boolean;
-  onDragStartBlock: () => void;
-  onDragEndBlock: () => void;
-  onDragOverBlock: () => void;
-  onDragLeaveBlock: () => void;
-  onDropOnBlock: (payload: DragPayload) => void;
   onChanged: () => void;
 }) {
   const file = block.file;
   if (!file) return null;
 
-  const handleDragStart = (e: DragEvent) => {
-    setDragPayload(e, { kind: "block", id: block.id });
-    onDragStartBlock();
-  };
-
   return (
-    <div
-      className={`group/griditem relative ${isDragging ? "opacity-40" : ""} ${
-        isDragOver ? "rounded-md ring-2 ring-stone-400" : ""
-      } ${draggable ? "cursor-grab select-none active:cursor-grabbing" : ""}`}
-      // The whole tile is the drag source — no overlay grip badge.
-      draggable={draggable}
-      onDragStart={draggable ? handleDragStart : undefined}
-      onDragEnd={draggable ? onDragEndBlock : undefined}
-      onDragOver={(e) => {
-        if (draggable) {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
-          onDragOverBlock();
-        }
-      }}
-      onDragLeave={(e) => {
-        // dragleave fires when the cursor crosses onto a child element too
-        // (the caption or edit buttons) — not just when it truly exits the
-        // tile — so without this guard the ring flickers off mid-hover.
-        if (e.currentTarget.contains(e.relatedTarget as Node)) return;
-        onDragLeaveBlock();
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onDragLeaveBlock();
-        const payload = readDragPayload(e);
-        if (payload) onDropOnBlock(payload);
-      }}
-    >
+    <div className="group/griditem relative">
       <PhotoCardBody
         projectId={projectId}
         file={file}
@@ -1359,19 +955,11 @@ function PhotoGridItem({
 function VideoBlockRow({
   projectId,
   block,
-  draggable,
-  onDragStart,
-  onDragEnd,
-  className,
   editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
-  draggable: boolean;
-  onDragStart: (e: DragEvent) => void;
-  onDragEnd: () => void;
-  className?: string;
   editable: boolean;
   onChanged: () => void;
 }) {
@@ -1379,12 +967,9 @@ function VideoBlockRow({
   if (!file) return null;
 
   return (
-    <div className={`group flex items-start ${className ?? ""}`}>
+    <div className="group flex items-start">
       <div
-        className={`group/video relative w-full max-w-xs flex-1 ${draggable ? "cursor-grab select-none active:cursor-grabbing" : ""}`}
-        draggable={draggable}
-        onDragStart={draggable ? onDragStart : undefined}
-        onDragEnd={draggable ? onDragEnd : undefined}
+        className="group/video relative w-full max-w-xs flex-1"
       >
         <FileOpenButton
           fileId={file.id}
@@ -1430,19 +1015,11 @@ function VideoBlockRow({
 function DocumentBlockRow({
   projectId,
   block,
-  draggable,
-  onDragStart,
-  onDragEnd,
-  className,
   editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
-  draggable: boolean;
-  onDragStart: (e: DragEvent) => void;
-  onDragEnd: () => void;
-  className?: string;
   editable: boolean;
   onChanged: () => void;
 }) {
@@ -1459,17 +1036,12 @@ function DocumentBlockRow({
   }
 
   return (
-    <div className={`group/file relative flex items-start ${className ?? ""}`}>
+    <div className="group/file relative flex items-start">
       {/* `relative` here, not only on the wrapper — the hover actions below
           are absolutely positioned and must anchor to this max-w-xs card,
           not to the full-width row around it. */}
       <div
-        className={`relative w-full max-w-xs flex-1 rounded-lg border border-stone-200 bg-white shadow-sm transition-all hover:shadow-md ${
-          draggable ? "cursor-grab select-none active:cursor-grabbing" : ""
-        }`}
-        draggable={draggable}
-        onDragStart={draggable ? onDragStart : undefined}
-        onDragEnd={draggable ? onDragEnd : undefined}
+        className="relative w-full max-w-xs flex-1 rounded-lg border border-stone-200 bg-white shadow-sm transition-all hover:shadow-md"
       >
         <div
           role="button"

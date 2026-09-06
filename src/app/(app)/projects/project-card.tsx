@@ -24,6 +24,12 @@ export function ProjectCard({
             <img
               src={coverImageUrl}
               alt=""
+              // A full grid of projects is a lot of covers; without this the
+              // browser fetches every one on load, including the rows nobody
+              // has scrolled to. Unlike the resize above, this needs no
+              // Supabase plan features.
+              loading="lazy"
+              decoding="async"
               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
             />
           ) : (

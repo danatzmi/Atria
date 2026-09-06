@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
-import { createSignedUrl } from "@/lib/supabase/storage";
+import { createSignedUrl, IMAGE_COVER_WIDTH } from "@/lib/supabase/storage";
 import { getProjectOrNotFound } from "./data";
 import { getSubtabCounts, getTabContents, getTabCounts } from "./folder/actions";
 import { ProjectFormDialog } from "../project-form-dialog";
@@ -23,7 +23,7 @@ export default async function ProjectHomePage(
   } = await supabase.auth.getUser();
 
   const coverImageUrl = project.cover_image
-    ? await createSignedUrl(supabase, project.cover_image)
+    ? await createSignedUrl(supabase, project.cover_image, IMAGE_COVER_WIDTH)
     : null;
 
   // The project root's folders are the top-level Binder Tabs; its blocks are
