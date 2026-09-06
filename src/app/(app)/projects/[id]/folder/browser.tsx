@@ -10,13 +10,14 @@ import {
   type ReactNode,
 } from "react";
 import Image from "next/image";
+import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import {
   buildStorageKey,
   MAX_FILE_SIZE_BYTES,
   PROJECT_FILES_BUCKET,
 } from "@/lib/supabase/storage";
-import { formatBytes, getFormatLabel } from "@/lib/files";
+import { formatBytes, getFormatLabel, isPdfFile } from "@/lib/files";
 import { renderBlockContent, tryParseDocJSON } from "@/lib/doc-content";
 import { midpointSortOrder } from "@/lib/sort-order";
 import { blockMatchesQuery, type BlockRow, type FileRow, type FolderRow } from "./data";
@@ -76,6 +77,19 @@ function streamKey(item: StreamItem): string {
   return `images-${item.blocks[0].id}`;
 }
 
+// The rendered page's pixel width. The card is max-w-xs (320px), so this is
+// 2x for retina — pdf.js rasterises at whatever width it's given, and a
+// page rendered at CSS size looks visibly soft.
+const PDF_THUMBNAIL_WIDTH = 640;
+
+// pdf.js is well over a megabyte and most tabs contain no PDF at all, so it
+// is loaded on demand rather than bundled into the canvas. ssr:false because
+// it needs canvas and a web worker, neither of which exists on the server.
+const PdfThumbnail = dynamic(
+  () => import("./pdf-thumbnail").then((m) => m.PdfThumbnail),
+  { ssr: false, loading: () => <div className="h-full w-full animate-pulse bg-stone-100" /> }
+);
+
 type UploadItem = {
   id: string;
   name: string;
@@ -131,7 +145,7 @@ export function FolderBrowser({
   const [data, setData] = useState<{
     folders: FolderRow[];
     blocks: BlockRow[];
-    imageUrls: Record<string, string>;
+    previewUrls: Record<string, string>;
   } | null>(null);
   const [isLoading, startTransition] = useTransition();
 
@@ -160,7 +174,7 @@ export function FolderBrowser({
   }
 
   const blocks = useMemo(() => data?.blocks ?? [], [data]);
-  const imageUrls = data?.imageUrls ?? {};
+  const previewUrls = data?.previewUrls ?? {};
 
   const trimmedQuery = query.trim();
   const isFiltering = trimmedQuery !== "";
@@ -384,7 +398,7 @@ export function FolderBrowser({
                 <BlockItem
                   projectId={projectId}
                   block={item.block}
-                  imageUrl={item.block.file ? imageUrls[item.block.file.storage_key] : undefined}
+                  previewUrl={item.block.file ? previewUrls[item.block.file.storage_key] : undefined}
                   editable={editable}
                   onChanged={refresh}
                 />
@@ -392,7 +406,7 @@ export function FolderBrowser({
                 <PhotoGrid
                   projectId={projectId}
                   blocks={item.blocks}
-                  imageUrls={imageUrls}
+                  imageUrls={previewUrls}
                   editable={editable}
                   onChanged={refresh}
                 />
@@ -643,13 +657,15 @@ function pickFiles(onFiles: (files: FileList) => void) {
 function BlockItem({
   projectId,
   block,
-  imageUrl,
+  previewUrl,
   editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
-  imageUrl?: string;
+  // Signed URL for a previewable file — an image, a video, or a PDF.
+  // Undefined for file types we show a badge for instead.
+  previewUrl?: string;
   editable: boolean;
   onChanged: () => void;
 }) {
@@ -668,7 +684,7 @@ function BlockItem({
         <PhotoBlockRow
           projectId={projectId}
           block={block}
-          imageUrl={imageUrl}
+          imageUrl={previewUrl}
           editable={editable}
           onChanged={onChanged}
         />
@@ -678,6 +694,7 @@ function BlockItem({
         <VideoBlockRow
           projectId={projectId}
           block={block}
+          previewUrl={previewUrl}
           editable={editable}
           onChanged={onChanged}
         />
@@ -687,6 +704,7 @@ function BlockItem({
         <DocumentBlockRow
           projectId={projectId}
           block={block}
+          previewUrl={previewUrl}
           editable={editable}
           onChanged={onChanged}
         />
@@ -967,11 +985,13 @@ function PhotoGridItem({
 function VideoBlockRow({
   projectId,
   block,
+  previewUrl,
   editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
+  previewUrl?: string;
   editable: boolean;
   onChanged: () => void;
 }) {
@@ -987,8 +1007,33 @@ function VideoBlockRow({
           fileId={file.id}
           className="flex w-full flex-col overflow-hidden rounded-lg border border-stone-200 bg-white text-left shadow-sm transition-shadow hover:shadow-md disabled:opacity-60"
         >
-          <div className="relative flex aspect-video w-full items-center justify-center bg-stone-100">
-            <PlayIcon className="h-9 w-9 text-stone-400" />
+          <div className="relative flex aspect-video w-full items-center justify-center overflow-hidden bg-stone-100">
+            {previewUrl ? (
+              // #t=0.1 asks the browser to seek just past the start, so the
+              // element paints a real frame instead of a black rectangle —
+              // no JS, and it works where the `poster` attribute can't
+              // because we have no separately generated thumbnail.
+              // preload="metadata" keeps this to a few KB of header, not the
+              // whole clip. pointer-events-none so a tap still reaches the
+              // FileOpenButton wrapping this.
+              <video
+                src={`${previewUrl}#t=0.1`}
+                preload="metadata"
+                muted
+                playsInline
+                className="pointer-events-none h-full w-full object-cover"
+              />
+            ) : (
+              <PlayIcon className="h-9 w-9 text-stone-400" />
+            )}
+            {/* Kept over the frame so a still frame still reads as a video. */}
+            {previewUrl && (
+              <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <span className="flex h-11 w-11 items-center justify-center rounded-full bg-stone-900/45 backdrop-blur-sm">
+                  <PlayIcon className="h-5 w-5 text-white" />
+                </span>
+              </span>
+            )}
             <span className="absolute left-2 top-2 rounded bg-stone-900/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white">
               Video
             </span>
@@ -1027,17 +1072,23 @@ function VideoBlockRow({
 function DocumentBlockRow({
   projectId,
   block,
+  previewUrl,
   editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
+  previewUrl?: string;
   editable: boolean;
   onChanged: () => void;
 }) {
   const file = block.file;
   const [opening, setOpening] = useState(false);
   if (!file) return null;
+
+  // Only PDFs get a real preview. Everything else — Word, Excel, ZIP —
+  // would need an external conversion service, so they keep the badge.
+  const showPdfPreview = !!previewUrl && isPdfFile(file.mime_type, file.name);
 
   async function handleOpen() {
     if (opening) return;
@@ -1071,13 +1122,35 @@ function DocumentBlockRow({
             {getFormatLabel(file.mime_type, file.name)}
           </span>
 
-          <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-stone-200/60">
-            <DocumentIcon className="h-8 w-8 text-stone-500" />
-          </div>
+          {showPdfPreview ? (
+            // The page itself, bled to the card's top edge — a plan or
+            // moodboard is recognisable at a glance, which an icon never is.
+            // object-top because the useful part of a document page is its
+            // head, not its middle.
+            <div className="absolute inset-0 overflow-hidden bg-white">
+              <PdfThumbnail url={previewUrl!} width={PDF_THUMBNAIL_WIDTH} />
+            </div>
+          ) : (
+            <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-white shadow-sm ring-1 ring-stone-200/60">
+              <DocumentIcon className="h-8 w-8 text-stone-500" />
+            </div>
+          )}
 
-          <span className="mt-3 text-[11px] font-medium text-stone-400">
-            {opening ? "Opening…" : "Click to view"}
-          </span>
+          {/* With a page rendered behind it, "Click to view" would sit on
+              top of the document. The badge above already marks the card as
+              a file, so the hint only earns its place on the icon fallback —
+              except while opening, which always needs feedback. */}
+          {(!showPdfPreview || opening) && (
+            <span
+              className={`text-[11px] font-medium ${
+                showPdfPreview
+                  ? "absolute inset-x-0 bottom-0 bg-white/85 py-1 text-center text-stone-500 backdrop-blur-sm"
+                  : "mt-3 text-stone-400"
+              }`}
+            >
+              {opening ? "Opening…" : "Click to view"}
+            </span>
+          )}
         </div>
 
         <div

@@ -7,7 +7,7 @@ import {
   createSignedUrls,
   PROJECT_FILES_BUCKET,
 } from "@/lib/supabase/storage";
-import { classifyMimeType } from "@/lib/files";
+import { classifyMimeType, isPdfFile } from "@/lib/files";
 import { docJSONIsEmpty, tryParseDocJSON } from "@/lib/doc-content";
 import {
   getFolderContents,
@@ -582,7 +582,8 @@ export async function getTabContents(
 ): Promise<{
   folders: FolderRow[];
   blocks: BlockRow[];
-  imageUrls: Record<string, string>;
+  // Keyed by storage_key. Only holds entries for previewable files.
+  previewUrls: Record<string, string>;
 }> {
   const supabase = await createClient();
   const [{ folders }, blocks] = await Promise.all([
@@ -590,14 +591,22 @@ export async function getTabContents(
     getSectionBlocks(supabase, projectId, folderId),
   ]);
 
-  // Signed preview URLs for image blocks only — documents/videos render as
-  // type badges, not previews, so there's no reason to sign every object.
-  const imageKeys = blocks
-    .filter((b) => b.type === "image" && b.file)
+  // Signed URLs for everything we can actually show: images, videos (a
+  // paused first frame) and PDFs (first page on a canvas). Word docs, ZIPs
+  // and the like still render as a type badge, so signing them would be
+  // wasted work.
+  const previewKeys = blocks
+    .filter(
+      (b) =>
+        b.file &&
+        (b.type === "image" ||
+          b.type === "video" ||
+          isPdfFile(b.file.mime_type, b.file.name))
+    )
     .map((b) => b.file!.storage_key);
-  const imageUrlMap = await createSignedUrls(supabase, imageKeys);
+  const previewUrlMap = await createSignedUrls(supabase, previewKeys);
 
-  return { folders, blocks, imageUrls: Object.fromEntries(imageUrlMap) };
+  return { folders, blocks, previewUrls: Object.fromEntries(previewUrlMap) };
 }
 
 // Item-count badge for each divider row, keyed by tab id.
