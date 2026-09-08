@@ -3,7 +3,12 @@
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { getSubtabCounts, getTabCounts, getTabContents } from "./folder/actions";
+import {
+  getSubtabCounts,
+  getTabCounts,
+  getTabContents,
+  listChildFolders,
+} from "./folder/actions";
 import type { FolderRow } from "./folder/data";
 import { FolderBrowser } from "./folder/browser";
 import { ChevronIcon, ChevronLeftIcon, MenuIcon } from "./folder/item-icon";
@@ -244,6 +249,7 @@ export function BinderWorkspace({
             projectId={projectId}
             editable={editable}
             tabs={tabs}
+            subtabCounts={subtabCounts}
             onSelectTab={navigate}
           />
         ) : (
@@ -274,6 +280,7 @@ function ProjectOverview({
   projectId,
   editable,
   tabs,
+  subtabCounts,
   onSelectTab,
 }: {
   projectName: string;
@@ -285,6 +292,10 @@ function ProjectOverview({
   // Only used below md, where the sidebar is hidden behind a drawer — see
   // the tab index at the bottom of this component.
   tabs: Tab[];
+  // Sub-tab counts only — decides which rows get an expand control. Blocks
+  // must not count here, or a tab full of photos would offer to expand into
+  // nothing.
+  subtabCounts: Record<string, number>;
   // Same handler the sidebar uses, so a tap here behaves exactly like a
   // sidebar click: it updates ?tab= and seeds the canvas header's name.
   onSelectTab: (id: string, name?: string) => void;
@@ -367,27 +378,12 @@ function ProjectOverview({
           to discover. md:hidden because desktop already has the permanent
           sidebar, and a second list there would just be a duplicate. */}
       {hasTabs && (
-        <div className="mt-8 md:hidden">
-          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
-            Tabs
-          </h3>
-          <ul className="mt-2 border-t border-stone-100">
-            {tabs.map((tab) => (
-              <li key={tab.id}>
-                <button
-                  type="button"
-                  onClick={() => onSelectTab(tab.id, tab.name)}
-                  className="flex w-full items-center justify-between gap-3 border-b border-stone-100 py-3.5 text-left transition-colors active:bg-stone-50"
-                >
-                  <span className="min-w-0 truncate text-[15px] text-stone-800">
-                    {tab.name}
-                  </span>
-                  <ChevronIcon className="h-4 w-4 shrink-0 text-stone-300" />
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <MobileTabIndex
+          projectId={projectId}
+          tabs={tabs}
+          subtabCounts={subtabCounts}
+          onSelectTab={onSelectTab}
+        />
       )}
 
       {!hasTabs && (
@@ -398,6 +394,127 @@ function ProjectOverview({
           </p>
         </div>
       )}
+    </div>
+  );
+}
+
+// The mobile-only tab index. Below md the sidebar is a drawer, so opening a
+// project otherwise shows the overview and no route into any of its content
+// — the tabs exist only behind a hamburger nobody is obliged to discover.
+// md:hidden because desktop already has the permanent sidebar.
+//
+// Navigation and expansion are separate targets, iOS-style: tapping the name
+// opens that tab, tapping the chevron reveals its sub-tabs. Making the whole
+// row expand (as the sidebar does) would leave a parent tab's OWN content
+// unreachable from here, since the row would no longer navigate.
+function MobileTabIndex({
+  projectId,
+  tabs,
+  subtabCounts,
+  onSelectTab,
+}: {
+  projectId: string;
+  tabs: Tab[];
+  subtabCounts: Record<string, number>;
+  onSelectTab: (id: string, name?: string) => void;
+}) {
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  // Children are fetched on first expand and kept — same lazy pattern the
+  // sidebar uses, so a project with many tabs doesn't pay for sub-tabs
+  // nobody opened.
+  const [children, setChildren] = useState<Record<string, { id: string; name: string }[]>>({});
+  const [loading, setLoading] = useState<Set<string>>(new Set());
+
+  async function toggle(tabId: string) {
+    const isOpen = expanded.has(tabId);
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (isOpen) next.delete(tabId);
+      else next.add(tabId);
+      return next;
+    });
+    if (isOpen || children[tabId]) return;
+
+    setLoading((prev) => new Set(prev).add(tabId));
+    const rows = await listChildFolders(projectId, tabId);
+    setChildren((prev) => ({ ...prev, [tabId]: rows }));
+    setLoading((prev) => {
+      const next = new Set(prev);
+      next.delete(tabId);
+      return next;
+    });
+  }
+
+  return (
+    <div className="mt-8 md:hidden">
+      <h3 className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+        Tabs
+      </h3>
+      <ul className="mt-2 border-t border-stone-100">
+        {tabs.map((tab) => {
+          const hasSubtabs = (subtabCounts[tab.id] ?? 0) > 0;
+          const isOpen = expanded.has(tab.id);
+          return (
+            <li key={tab.id}>
+              <div className="flex items-center border-b border-stone-100">
+                <button
+                  type="button"
+                  onClick={() => onSelectTab(tab.id, tab.name)}
+                  className="min-w-0 flex-1 py-3.5 text-left transition-colors active:bg-stone-50"
+                >
+                  <span className="block truncate text-[15px] text-stone-800">
+                    {tab.name}
+                  </span>
+                </button>
+                {hasSubtabs ? (
+                  <button
+                    type="button"
+                    onClick={() => toggle(tab.id)}
+                    aria-label={isOpen ? `Hide sub-tabs of ${tab.name}` : `Show sub-tabs of ${tab.name}`}
+                    aria-expanded={isOpen}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center text-stone-400 transition-colors active:bg-stone-50"
+                  >
+                    <ChevronIcon
+                      className={`h-4 w-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
+                    />
+                  </button>
+                ) : (
+                  // Placeholder keeps every name column the same width, so
+                  // the list doesn't ripple as rows gain or lose a chevron.
+                  <span className="flex h-11 w-11 shrink-0 items-center justify-center">
+                    <ChevronIcon className="h-4 w-4 text-stone-300" />
+                  </span>
+                )}
+              </div>
+
+              {isOpen && (
+                <ul className="border-b border-stone-100 bg-stone-50/40">
+                  {loading.has(tab.id) && (
+                    <li className="py-2.5 pl-6 text-sm text-stone-400">Loading…</li>
+                  )}
+                  {(children[tab.id] ?? []).map((child) => (
+                    <li key={child.id}>
+                      <button
+                        type="button"
+                        onClick={() => onSelectTab(child.id, child.name)}
+                        className="flex w-full items-center justify-between gap-3 py-3 pl-6 pr-4 text-left transition-colors active:bg-stone-100"
+                      >
+                        <span className="min-w-0 truncate text-sm text-stone-600">
+                          {child.name}
+                        </span>
+                        <ChevronIcon className="h-3.5 w-3.5 shrink-0 text-stone-300" />
+                      </button>
+                    </li>
+                  ))}
+                  {!loading.has(tab.id) && (children[tab.id]?.length ?? 0) === 0 && (
+                    <li className="py-2.5 pl-6 text-sm text-stone-400">No sub-tabs</li>
+                  )}
+                </ul>
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

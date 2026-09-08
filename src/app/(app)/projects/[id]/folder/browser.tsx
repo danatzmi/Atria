@@ -317,11 +317,11 @@ export function FolderBrowser({
             {name ?? "Untitled tab"}
           </h2>
         </div>
-        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto">
+        <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
           <SearchBox
             query={query}
             onQueryChange={handleQueryChange}
-            className="block w-full rounded-md border border-stone-300 px-3 py-1.5 text-sm shadow-sm focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500 sm:w-40"
+            className="block min-w-0 flex-1 rounded-md border border-stone-300 px-3 py-1.5 text-sm shadow-sm focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500 sm:w-40 sm:flex-none"
           />
           {editable && (
             <>
@@ -540,13 +540,12 @@ function AddMenu({
             onClick={() => setOpen(false)}
             className="fixed inset-0 z-10 cursor-default"
           />
-          {/* Anchored to whichever side keeps the menu on screen, switching
-              at the same `sm` breakpoint the header row itself does. Below
-              sm the search box takes a full row, so "+ Add" wraps to the
-              LEFT edge — anchoring the menu's right edge there would hang
-              most of its 11rem off the left of the screen. From sm up the
-              controls sit at the right, where the opposite is true. */}
-          <div className="absolute left-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-stone-200 bg-white py-1 shadow-lg sm:left-auto sm:right-0">
+          {/* right-0 at every size: the trigger now sits at the right end of
+              the header row on mobile too (the search box flexes instead of
+              taking its own line), so the menu opens leftward into the page.
+              This was briefly left-anchored below sm, back when "+ Add"
+              wrapped to the left edge — that layout is gone. */}
+          <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-stone-200 bg-white py-1 shadow-lg">
             <BlockFormDialog
               projectId={projectId}
               sectionId={folderId}
