@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useCallback, useEffect, useState } from "react";
+import { startTransition, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   getSubtabCounts,
@@ -471,19 +471,39 @@ function MobileTabRow({
 
   const hasSubtabs = subtabCount > 0;
 
-  async function toggle(e: React.MouseEvent) {
-    // Stop the tap here: the row around this control is itself interactive,
-    // and on touch a bubbled event can end up resolving to the wrong target.
-    e.preventDefault();
+  // Deliberately NOT async, and no preventDefault().
+  //
+  // The handler now does its state change synchronously and returns, so the
+  // row opens or closes the instant it is tapped no matter what the network
+  // does — the fetch can fail, hang, or be slow and the disclosure still
+  // works. preventDefault() is gone because on a click it cancels the
+  // browser's default action, which is not something this control needs, and
+  // iOS Safari's touch-to-click resolution is the wrong thing to interfere
+  // with. stopPropagation stays: the row around this button navigates.
+  function toggle(e: React.MouseEvent) {
     e.stopPropagation();
 
-    setExpanded((v) => !v);
-    if (children !== null) return;
+    const willOpen = !expanded;
+    setExpanded(willOpen);
+
+    // Closing, or already fetched — nothing more to do.
+    if (!willOpen || children !== null) return;
 
     setLoading(true);
-    const rows = await listChildFolders(projectId, tab.id);
-    setChildren(rows);
-    setLoading(false);
+    startTransition(async () => {
+      try {
+        const rows = await listChildFolders(projectId, tab.id);
+        setChildren(rows);
+      } catch (err) {
+        // A failed fetch must not leave a spinner forever. The row stays
+        // open and falls through to the "No sub-tabs" line below, and the
+        // reason is in the console rather than swallowed.
+        console.error("[atria] failed to load sub-tabs", err);
+        setChildren([]);
+      } finally {
+        setLoading(false);
+      }
+    });
   }
 
   return (
