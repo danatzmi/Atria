@@ -6,7 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { getSubtabCounts, getTabCounts, getTabContents } from "./folder/actions";
 import type { FolderRow } from "./folder/data";
 import { FolderBrowser } from "./folder/browser";
-import { ChevronLeftIcon, MenuIcon } from "./folder/item-icon";
+import { ChevronIcon, ChevronLeftIcon, MenuIcon } from "./folder/item-icon";
 import { CoverImageDialog } from "./cover-image-dialog";
 import { ProjectFormDialog } from "../project-form-dialog";
 import { ProjectSidebar, UNSORTED } from "./project-sidebar";
@@ -243,7 +243,8 @@ export function BinderWorkspace({
             hasCoverImage={hasCoverImage}
             projectId={projectId}
             editable={editable}
-            hasTabs={tabs.length > 0}
+            tabs={tabs}
+            onSelectTab={navigate}
           />
         ) : (
           <FolderBrowser
@@ -272,7 +273,8 @@ function ProjectOverview({
   hasCoverImage,
   projectId,
   editable,
-  hasTabs,
+  tabs,
+  onSelectTab,
 }: {
   projectName: string;
   description: string | null;
@@ -280,8 +282,14 @@ function ProjectOverview({
   hasCoverImage: boolean;
   projectId: string;
   editable: boolean;
-  hasTabs: boolean;
+  // Only used below md, where the sidebar is hidden behind a drawer — see
+  // the tab index at the bottom of this component.
+  tabs: Tab[];
+  // Same handler the sidebar uses, so a tap here behaves exactly like a
+  // sidebar click: it updates ?tab= and seeds the canvas header's name.
+  onSelectTab: (id: string, name?: string) => void;
 }) {
+  const hasTabs = tabs.length > 0;
   return (
     <div className="w-full">
       <div className="relative aspect-[3/1] w-full overflow-hidden rounded-xl bg-zinc-100">
@@ -351,6 +359,35 @@ function ProjectOverview({
             />
           </div>
         )
+      )}
+
+      {/* Mobile-only tab index. Below md the sidebar is a drawer, so opening
+          a project otherwise shows the overview and no route into any of its
+          content — the tabs exist only behind a hamburger nobody is obliged
+          to discover. md:hidden because desktop already has the permanent
+          sidebar, and a second list there would just be a duplicate. */}
+      {hasTabs && (
+        <div className="mt-8 md:hidden">
+          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+            Tabs
+          </h3>
+          <ul className="mt-2 border-t border-stone-100">
+            {tabs.map((tab) => (
+              <li key={tab.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelectTab(tab.id, tab.name)}
+                  className="flex w-full items-center justify-between gap-3 border-b border-stone-100 py-3.5 text-left transition-colors active:bg-stone-50"
+                >
+                  <span className="min-w-0 truncate text-[15px] text-stone-800">
+                    {tab.name}
+                  </span>
+                  <ChevronIcon className="h-4 w-4 shrink-0 text-stone-300" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {!hasTabs && (
