@@ -407,6 +407,10 @@ function ProjectOverview({
 // opens that tab, tapping the chevron reveals its sub-tabs. Making the whole
 // row expand (as the sidebar does) would leave a parent tab's OWN content
 // unreachable from here, since the row would no longer navigate.
+// The mobile-only tab index. Below md the sidebar is a drawer, so opening a
+// project otherwise shows the overview and no route into any of its content
+// — the tabs exist only behind a hamburger nobody is obliged to discover.
+// md:hidden because desktop already has the permanent sidebar.
 function MobileTabIndex({
   projectId,
   tabs,
@@ -418,103 +422,131 @@ function MobileTabIndex({
   subtabCounts: Record<string, number>;
   onSelectTab: (id: string, name?: string) => void;
 }) {
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // Children are fetched on first expand and kept — same lazy pattern the
-  // sidebar uses, so a project with many tabs doesn't pay for sub-tabs
-  // nobody opened.
-  const [children, setChildren] = useState<Record<string, { id: string; name: string }[]>>({});
-  const [loading, setLoading] = useState<Set<string>>(new Set());
-
-  async function toggle(tabId: string) {
-    const isOpen = expanded.has(tabId);
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (isOpen) next.delete(tabId);
-      else next.add(tabId);
-      return next;
-    });
-    if (isOpen || children[tabId]) return;
-
-    setLoading((prev) => new Set(prev).add(tabId));
-    const rows = await listChildFolders(projectId, tabId);
-    setChildren((prev) => ({ ...prev, [tabId]: rows }));
-    setLoading((prev) => {
-      const next = new Set(prev);
-      next.delete(tabId);
-      return next;
-    });
-  }
-
   return (
     <div className="mt-8 md:hidden">
       <h3 className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
         Tabs
       </h3>
       <ul className="mt-2 border-t border-stone-100">
-        {tabs.map((tab) => {
-          const hasSubtabs = (subtabCounts[tab.id] ?? 0) > 0;
-          const isOpen = expanded.has(tab.id);
-          return (
-            <li key={tab.id}>
-              <div className="flex items-center border-b border-stone-100">
-                <button
-                  type="button"
-                  onClick={() => onSelectTab(tab.id, tab.name)}
-                  className="min-w-0 flex-1 py-3.5 text-left transition-colors active:bg-stone-50"
-                >
-                  <span className="block truncate text-[15px] text-stone-800">
-                    {tab.name}
-                  </span>
-                </button>
-                {hasSubtabs ? (
-                  <button
-                    type="button"
-                    onClick={() => toggle(tab.id)}
-                    aria-label={isOpen ? `Hide sub-tabs of ${tab.name}` : `Show sub-tabs of ${tab.name}`}
-                    aria-expanded={isOpen}
-                    className="flex h-11 w-11 shrink-0 items-center justify-center text-stone-400 transition-colors active:bg-stone-50"
-                  >
-                    <ChevronIcon
-                      className={`h-4 w-4 transition-transform ${isOpen ? "rotate-90" : ""}`}
-                    />
-                  </button>
-                ) : (
-                  // Placeholder keeps every name column the same width, so
-                  // the list doesn't ripple as rows gain or lose a chevron.
-                  <span className="flex h-11 w-11 shrink-0 items-center justify-center">
-                    <ChevronIcon className="h-4 w-4 text-stone-300" />
-                  </span>
-                )}
-              </div>
-
-              {isOpen && (
-                <ul className="border-b border-stone-100 bg-stone-50/40">
-                  {loading.has(tab.id) && (
-                    <li className="py-2.5 pl-6 text-sm text-stone-400">Loading…</li>
-                  )}
-                  {(children[tab.id] ?? []).map((child) => (
-                    <li key={child.id}>
-                      <button
-                        type="button"
-                        onClick={() => onSelectTab(child.id, child.name)}
-                        className="flex w-full items-center justify-between gap-3 py-3 pl-6 pr-4 text-left transition-colors active:bg-stone-100"
-                      >
-                        <span className="min-w-0 truncate text-sm text-stone-600">
-                          {child.name}
-                        </span>
-                        <ChevronIcon className="h-3.5 w-3.5 shrink-0 text-stone-300" />
-                      </button>
-                    </li>
-                  ))}
-                  {!loading.has(tab.id) && (children[tab.id]?.length ?? 0) === 0 && (
-                    <li className="py-2.5 pl-6 text-sm text-stone-400">No sub-tabs</li>
-                  )}
-                </ul>
-              )}
-            </li>
-          );
-        })}
+        {tabs.map((tab) => (
+          <MobileTabRow
+            key={tab.id}
+            projectId={projectId}
+            tab={tab}
+            subtabCount={subtabCounts[tab.id] ?? 0}
+            onSelectTab={onSelectTab}
+          />
+        ))}
       </ul>
     </div>
+  );
+}
+
+// One row, owning its own expansion state.
+//
+// Navigation and expansion are separate targets, iOS-style: tapping the name
+// opens that tab, tapping the disclosure control reveals its sub-tabs. Making
+// the whole row expand (as the sidebar does) would leave a parent tab's OWN
+// content unreachable from here, since the row would no longer navigate.
+//
+// State is local rather than a Set of ids held by the parent: each row toggles
+// only itself, so there's no shared structure to update correctly, and a row
+// re-renders without touching its siblings.
+function MobileTabRow({
+  projectId,
+  tab,
+  subtabCount,
+  onSelectTab,
+}: {
+  projectId: string;
+  tab: Tab;
+  subtabCount: number;
+  onSelectTab: (id: string, name?: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  // null = never fetched. Distinguishes "not loaded yet" from "loaded, and
+  // this tab genuinely has no sub-tabs".
+  const [children, setChildren] = useState<{ id: string; name: string }[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const hasSubtabs = subtabCount > 0;
+
+  async function toggle(e: React.MouseEvent) {
+    // Stop the tap here: the row around this control is itself interactive,
+    // and on touch a bubbled event can end up resolving to the wrong target.
+    e.preventDefault();
+    e.stopPropagation();
+
+    setExpanded((v) => !v);
+    if (children !== null) return;
+
+    setLoading(true);
+    const rows = await listChildFolders(projectId, tab.id);
+    setChildren(rows);
+    setLoading(false);
+  }
+
+  return (
+    <li>
+      <div className="flex items-center border-b border-stone-100">
+        <button
+          type="button"
+          onClick={() => onSelectTab(tab.id, tab.name)}
+          className="min-w-0 flex-1 py-3.5 text-left transition-colors active:bg-stone-50"
+        >
+          <span className="block truncate text-[15px] text-stone-800">{tab.name}</span>
+        </button>
+
+        {hasSubtabs ? (
+          // A real control, and it has to LOOK like one: the previous version
+          // showed an identical grey chevron on every row, including tabs with
+          // nothing to expand, so tapping most of them did nothing and the
+          // whole affordance read as broken. This one is darker and separated
+          // by a hairline, so it reads as a button rather than decoration.
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label={expanded ? `Hide sub-tabs of ${tab.name}` : `Show sub-tabs of ${tab.name}`}
+            aria-expanded={expanded}
+            className="flex h-11 w-11 shrink-0 items-center justify-center border-l border-stone-100 text-stone-500 transition-colors active:bg-stone-100"
+          >
+            {/* pointer-events-none so the tap always resolves to the button,
+                never to the SVG inside it. */}
+            <ChevronIcon
+              className={`pointer-events-none h-4 w-4 transition-transform ${
+                expanded ? "rotate-90" : ""
+              }`}
+            />
+          </button>
+        ) : (
+          // Nothing to expand — a plain "opens this tab" marker, kept pale and
+          // unseparated so it doesn't invite a tap of its own.
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center">
+            <ChevronIcon className="pointer-events-none h-4 w-4 text-stone-300" />
+          </span>
+        )}
+      </div>
+
+      {expanded && (
+        <ul className="border-b border-stone-100 bg-stone-50/40">
+          {loading && <li className="py-2.5 pl-6 text-sm text-stone-400">Loading…</li>}
+          {(children ?? []).map((child) => (
+            <li key={child.id}>
+              <button
+                type="button"
+                onClick={() => onSelectTab(child.id, child.name)}
+                className="flex w-full items-center justify-between gap-3 py-3 pl-6 pr-4 text-left transition-colors active:bg-stone-100"
+              >
+                <span className="min-w-0 truncate text-sm text-stone-600">{child.name}</span>
+                <ChevronIcon className="pointer-events-none h-3.5 w-3.5 shrink-0 text-stone-300" />
+              </button>
+            </li>
+          ))}
+          {!loading && children !== null && children.length === 0 && (
+            <li className="py-2.5 pl-6 text-sm text-stone-400">No sub-tabs</li>
+          )}
+        </ul>
+      )}
+    </li>
   );
 }
