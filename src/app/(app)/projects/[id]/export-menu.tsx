@@ -47,6 +47,12 @@ export function ExportMenu({
         href={base}
         target="_blank"
         rel="noopener noreferrer"
+        // /export is the most expensive route in the app — it walks every
+        // folder and block in the project and signs a URL per file. Because
+        // target="_blank" opens a fresh document, a prefetched payload can
+        // never be read by the tab that opens; it would be rendered on the
+        // server and discarded on every project page view.
+        prefetch={false}
         className={TRIGGER_CLASS}
         aria-label="Export PDF"
         title="Export PDF"
@@ -94,6 +100,7 @@ export function ExportMenu({
               href={`${base}?tab=${activeTabId}`}
               target="_blank"
               rel="noopener noreferrer"
+              prefetch={false}
               onClick={() => setOpen(false)}
               className={itemClass}
             >
@@ -104,6 +111,7 @@ export function ExportMenu({
               href={base}
               target="_blank"
               rel="noopener noreferrer"
+              prefetch={false}
               onClick={() => setOpen(false)}
               className={itemClass}
             >
