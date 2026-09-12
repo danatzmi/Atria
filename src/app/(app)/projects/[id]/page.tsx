@@ -15,9 +15,6 @@ export default async function ProjectHomePage(
   const { id } = await props.params;
   const searchParams = await props.searchParams;
   const isViewMode = searchParams.mode === "view";
-  // Which Tab (if any) the workspace currently has open — read here purely
-  // so Export PDF can carry that scope through to the export route.
-  const activeTabId = typeof searchParams.tab === "string" ? searchParams.tab : null;
   const { supabase, project } = await getProjectOrNotFound(id);
 
   const {
@@ -67,7 +64,7 @@ export default async function ProjectHomePage(
           <div className="flex shrink-0 items-center gap-1">
             {/* Inside a tab this offers a scope choice; from the Overview
                 it's a plain link straight to the whole-binder export. */}
-            <ExportMenu projectId={project.id} activeTabId={activeTabId} />
+            <ExportMenu projectId={project.id} />
           </div>
         </div>
       </header>

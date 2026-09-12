@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 // Standard printer glyph — the conventional Print/Save-as-PDF affordance,
 // rather than a document icon.
@@ -31,14 +32,12 @@ const TRIGGER_CLASS =
 // this tab or the whole binder — and the export page's own scope switch is
 // only discoverable after committing to one. Asking here costs one tap and
 // removes the wrong-document round trip.
-export function ExportMenu({
-  projectId,
-  activeTabId,
-}: {
-  projectId: string;
-  activeTabId: string | null;
-}) {
+export function ExportMenu({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(false);
+  // Read from the URL rather than taking it as a prop: tab changes now go
+  // through history.pushState, which never re-renders the server page, so a
+  // server-supplied prop would be stale after the first tab switch.
+  const activeTabId = useSearchParams().get("tab");
   const base = `/projects/${projectId}/export`;
 
   if (!activeTabId) {

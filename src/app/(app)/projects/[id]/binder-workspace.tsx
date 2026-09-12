@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { startTransition, useCallback, useEffect, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import {
   getSubtabCounts,
   getTabCounts,
@@ -50,7 +50,6 @@ export function BinderWorkspace({
   initialSubtabCounts: Record<string, number>;
   initialUnsortedCount: number;
 }) {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
@@ -158,13 +157,23 @@ export function BinderWorkspace({
     setSubtabCounts(subCounts);
   }, [projectId]);
 
+  // Switching tabs is entirely a client-side concern — every piece of UI
+  // that depends on ?tab= lives in this component tree.
+  //
+  // router.push would re-fetch the route's RSC payload on every click, which
+  // measured at 726ms in production for 0.9kB: page.tsx re-running its
+  // project/folder/count queries to produce a page that looks identical.
+  // The App Router has no shallow mode, so native history.pushState is the
+  // documented way to change the URL without re-running the server. Next
+  // keeps useSearchParams in sync with it, so deep links, sharing and
+  // back/forward all still work.
   function navigate(tab: string | null, name?: string) {
     if (tab && name !== undefined) setNestedActiveName(name);
     const params = new URLSearchParams(searchParams);
     if (tab) params.set("tab", tab);
     else params.delete("tab");
     const query = params.toString();
-    router.push(`${pathname}${query ? `?${query}` : ""}`, { scroll: false });
+    window.history.pushState(null, "", `${pathname}${query ? `?${query}` : ""}`);
   }
 
   // The sidebar's own onNavigate — same as navigate above, but also closes
