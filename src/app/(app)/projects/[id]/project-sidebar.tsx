@@ -176,22 +176,6 @@ export function ProjectSidebar({
             : "md:w-64 lg:w-72"
         }`}
       >
-        {/* Desktop collapse control. Hidden on mobile, where the drawer's
-            own X button (below) is the way out. The word "Collapse" carries
-            the meaning here — a bare glyph asks the reader to already know
-            the convention, and this sidebar's audience shouldn't have to. */}
-        <div className="mb-3 hidden md:flex md:justify-end">
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            title="Collapse sidebar"
-            className="flex items-center gap-1 rounded-md px-1.5 py-1 text-[11px] font-semibold tracking-wider text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
-          >
-            <ChevronLeftIcon className="h-3.5 w-3.5" />
-            COLLAPSE
-          </button>
-        </div>
-
         <div className="mb-2 flex items-center justify-between md:hidden">
           <span className="text-sm font-semibold text-stone-900">Tabs</span>
           <button
@@ -207,15 +191,20 @@ export function ProjectSidebar({
         {/* No "Overview" row here — the project title in the top nav bar is
             the way back to the project home view. */}
         <div className="flex items-center justify-between px-3">
-          <span className="text-[11px] font-semibold tracking-wider text-stone-400">
-            TABS
-          </span>
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            title="Collapse sidebar"
+            className="hidden items-center justify-center rounded-md p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 md:flex"
+          >
+            <ChevronLeftIcon className="h-4 w-4" />
+          </button>
           {editable && (
             <FolderFormDialog
               projectId={projectId}
               parentFolderId={null}
-              triggerLabel="+ Tab"
-              triggerClassName="text-[11px] font-semibold tracking-wider text-stone-400 transition-colors hover:text-stone-700"
+              triggerLabel="+"
+              triggerClassName="flex h-5 w-5 items-center justify-center rounded-full bg-stone-100 pb-0.5 text-lg font-light text-stone-500 transition-colors hover:bg-stone-200 hover:text-stone-900"
               dialogTitle="New tab"
               namePlaceholder="Kitchen"
               submitLabel="Create tab"
