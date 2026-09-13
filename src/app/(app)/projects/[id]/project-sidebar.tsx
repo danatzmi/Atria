@@ -6,7 +6,7 @@ import { FolderFormDialog } from "./folder/folder-form-dialog";
 import { RenameDialog } from "./folder/rename-dialog";
 import { DeleteItemDialog } from "./folder/delete-item-dialog";
 import { DividerDropZone } from "./folder/divider-row";
-import { ChevronIcon, ChevronLeftIcon, CloseIcon } from "./folder/item-icon";
+import { ChevronIcon, CloseIcon, SidebarToggleIcon } from "./folder/item-icon";
 import { midpointSortOrder } from "@/lib/sort-order";
 import { readDragPayload, setDragPayload, type DragPayload } from "@/lib/drag-payload";
 
@@ -16,64 +16,6 @@ export type SidebarTab = { id: string; name: string; sort_order: number };
 // the ?tab= URL param — not a real folder id.
 export const UNSORTED = "unsorted";
 
-// A cycling editorial palette for the sidebar's physical divider tabs — each
-// top-level Tab gets one by its position (index % length); a Sub-tab
-// inherits its parent's palette unchanged rather than getting its own (see
-// SidebarTabList's paletteFor). Every field is a complete, literal Tailwind
-// class name — never concatenate extra modifiers onto them at render time
-// (e.g. `${bg}/60`), since Tailwind's build-time scanner only picks up
-// classes that appear as whole tokens somewhere in source.
-export const TAB_PALETTES = [
-  {
-    name: "blush",
-    bg: "bg-rose-50/80",
-    activeBg: "bg-rose-100",
-    text: "text-rose-900",
-    border: "border-rose-200",
-    accent: "bg-rose-300",
-  },
-  {
-    name: "lavender",
-    bg: "bg-purple-50/80",
-    activeBg: "bg-purple-100",
-    text: "text-purple-900",
-    border: "border-purple-200",
-    accent: "bg-purple-300",
-  },
-  {
-    name: "sage",
-    bg: "bg-emerald-50/80",
-    activeBg: "bg-emerald-100",
-    text: "text-emerald-900",
-    border: "border-emerald-200",
-    accent: "bg-emerald-300",
-  },
-  {
-    name: "butter",
-    bg: "bg-amber-50/80",
-    activeBg: "bg-amber-100",
-    text: "text-amber-900",
-    border: "border-amber-200",
-    accent: "bg-amber-300",
-  },
-  {
-    name: "peach",
-    bg: "bg-orange-50/80",
-    activeBg: "bg-orange-100",
-    text: "text-orange-900",
-    border: "border-orange-200",
-    accent: "bg-orange-300",
-  },
-  {
-    name: "sky",
-    bg: "bg-sky-50/80",
-    activeBg: "bg-sky-100",
-    text: "text-sky-900",
-    border: "border-sky-200",
-    accent: "bg-sky-300",
-  },
-] as const;
-export type TabPalette = (typeof TAB_PALETTES)[number];
 
 // Shared drag state for the whole Tab tree — lifted to ProjectSidebar (the
 // tree's root) and threaded down as one bundle, since a drop zone or a
@@ -197,7 +139,7 @@ export function ProjectSidebar({
             title="Collapse sidebar"
             className="hidden items-center justify-center rounded-md p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 md:flex"
           >
-            <ChevronLeftIcon className="h-4 w-4" />
+            <SidebarToggleIcon className="h-4 w-4" />
           </button>
           {editable && (
             <FolderFormDialog
@@ -225,7 +167,6 @@ export function ProjectSidebar({
             parentFolderId={null}
             tabs={tabs}
             depth={0}
-            paletteFor={(index) => TAB_PALETTES[index % TAB_PALETTES.length]}
             activeTabId={activeTabId}
             tabCounts={tabCounts}
             subtabCounts={subtabCounts}
@@ -240,10 +181,12 @@ export function ProjectSidebar({
           <button
             type="button"
             onClick={() => onNavigate(UNSORTED, "Unsorted")}
+            // Same active treatment as a tab row, so the two read as one
+            // list rather than two systems.
             className={`mt-4 flex items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors ${
               activeTabId === UNSORTED
-                ? "bg-white font-medium text-stone-900 shadow-xs"
-                : "text-stone-400 hover:bg-stone-100"
+                ? "bg-white font-medium text-stone-900 shadow-sm"
+                : "text-stone-500 hover:bg-stone-100/70 hover:text-stone-800"
             }`}
           >
             <span className="truncate">Unsorted</span>
@@ -269,7 +212,6 @@ function SidebarTabList({
   parentFolderId,
   tabs,
   depth,
-  paletteFor,
   activeTabId,
   tabCounts,
   subtabCounts,
@@ -282,11 +224,6 @@ function SidebarTabList({
   parentFolderId: string | null;
   tabs: SidebarTab[];
   depth: number;
-  // Varies by index at the top level (cycles through TAB_PALETTES); every
-  // nested SidebarTabList instead passes a constant function returning its
-  // own tab's already-resolved palette, so Sub-tabs inherit their parent's
-  // color family rather than getting a new one from their own position.
-  paletteFor: (index: number) => TabPalette;
   activeTabId: string | null;
   tabCounts: Record<string, number>;
   subtabCounts: Record<string, number>;
@@ -321,7 +258,16 @@ function SidebarTabList({
   }
 
   return (
-    <div className="flex flex-col gap-1">
+    // Only nested levels reserve rail space (pl-3 = the 12px the rows'
+    // -left-3 lines are drawn into, so the tree lands on the list's own
+    // left edge). Root tabs have no rail — there is no parent above them
+    // to descend from, so a line there is decoration with nothing to
+    // connect, and it shows even when everything is collapsed.
+    //
+    // The rail is drawn per row, never as a border on this wrapper: a
+    // wrapper border also spans the trailing drop zone after the last
+    // child, leaving a tail hanging past the final branch.
+    <div className={`flex flex-col ${depth > 0 ? "ml-3 gap-0.5 pl-3" : "gap-1.5"}`}>
       {zone(0)}
       {tabs.map((tab, index) => (
         <div key={tab.id}>
@@ -329,7 +275,7 @@ function SidebarTabList({
             projectId={projectId}
             tab={tab}
             depth={depth}
-            palette={paletteFor(index)}
+            isLast={index === tabs.length - 1}
             activeTabId={activeTabId}
             tabCounts={tabCounts}
             subtabCounts={subtabCounts}
@@ -349,7 +295,7 @@ function SidebarTabNode({
   projectId,
   tab,
   depth,
-  palette,
+  isLast,
   activeTabId,
   tabCounts,
   subtabCounts,
@@ -361,7 +307,9 @@ function SidebarTabNode({
   projectId: string;
   tab: SidebarTab;
   depth: number;
-  palette: TabPalette;
+  // Last child of its list — its rail stops at the branch rather than
+  // running on past it.
+  isLast: boolean;
   activeTabId: string | null;
   tabCounts: Record<string, number>;
   subtabCounts: Record<string, number>;
@@ -414,10 +362,11 @@ function SidebarTabNode({
     setExpanded((e) => !e);
   }
 
-  // Clicking the tab itself both navigates AND reveals whatever's nested
-  // inside it — a separate manual chevron click to discover a tab's own
-  // Sub-tabs shouldn't be required. Doesn't collapse anything: clicking an
-  // already-expanded tab just re-navigates, leaving its tree open.
+  // Two separate controls, two separate jobs: the chevron opens and closes
+  // the tree, the name navigates. Navigating still auto-expands, so arriving
+  // at a tab reveals what's nested inside it — but it never collapses, so a
+  // tree you opened stays open as you move around it. Closing is the
+  // chevron's job alone.
   function handleTabClick() {
     onNavigate(tab.id, tab.name);
     setExpanded(true);
@@ -466,14 +415,6 @@ function SidebarTabNode({
     onChanged();
   }
 
-  // Sub-tabs inherit their parent's color family but stay visually quieter
-  // at rest — a full palette.bg tint is reserved for top-level tabs (each
-  // one's own "distinct color identity" per the sidebar's overall design);
-  // a nested row only shows color via its (thinner) accent bar until it's
-  // the active one, at which point it gets the same activeBg/elevation
-  // treatment as any other tab.
-  const restBg = depth === 0 ? palette.bg : "bg-white";
-
   // Server-side sub-tab count, so this is known before the row has ever
   // been expanded. A tab that only holds photos/notes gets a plain dot
   // rather than a chevron that would promise hidden sub-tabs it doesn't
@@ -484,13 +425,59 @@ function SidebarTabNode({
 
   return (
     <div>
-      <div
-        className={`group relative flex items-center gap-0.5 rounded-l-md rounded-r-lg border pr-1 transition-all duration-150 ${palette.border} ${
+      {/* A border-free shell around the row, and the tree lines hang off
+          this rather than off the row itself.
+          Absolute offsets resolve against the padding box, so a child of
+          the row would be pushed inward by its 2px left border — putting
+          the row's rail 2px right of the subtree continuation below and
+          breaking the master rail. This shell has no border, so every
+          segment at every depth shares one x. It wraps only the row, so
+          top-1/2 is still the row's own middle. */}
+      <div className="relative">
+        {/* The ├── branch — nested rows only, so nothing is drawn when a
+            tab is collapsed and has nothing below it. Both pieces sit at
+            -left-3, matching the list's pl-3, so they meet on the rail
+            rather than near it.
+
+            The vertical always starts 8px ABOVE the row. For the first
+            child that reaches up into the parent row, which is what
+            visibly joins a subtree to the tab it belongs to; for the rest
+            it overlaps the segment above (more than the 2px gap-0.5),
+            since rows have fractional heights and an exact join leaves a
+            1px break.
+
+            isLast stops it at bottom-1/2 — exactly where the horizontal
+            stub crosses — so the tree ends on its last branch instead of
+            trailing past it. */}
+        {depth > 0 && (
+          <>
+            <span
+              aria-hidden
+              className={`pointer-events-none absolute -left-3 -top-2 w-px bg-stone-300 ${
+                isLast ? "bottom-1/2" : "bottom-0"
+              }`}
+            />
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -left-3 top-1/2 w-3 border-t border-stone-300"
+            />
+          </>
+        )}
+        <div
+        // Active state is carried by background + weight + text color
+        // alone. No border, no accent spine, no offset: on a list of tabs
+        // one quiet filled row reads as "you are here" more clearly than
+        // several competing signals, and it stays calm at any list length.
+        // Indentation now comes from the parent list's padding, not a
+        // per-row margin, so the rail and the rows can't drift apart.
+        className={`group relative flex items-center rounded-lg pl-2.5 pr-1 transition-colors duration-150 ${
           isActive
-            ? `${palette.activeBg} z-10 translate-x-1.5 font-semibold shadow-md`
-            : `${restBg} hover:translate-x-0.5`
-        } ${isNestTarget ? "ring-2 ring-inset ring-stone-500" : ""}`}
-        style={{ marginLeft: depth * 14 }}
+            ? "border border-stone-200 border-l-2 border-l-stone-900 bg-white shadow-sm"
+            : // Same border widths as the active row, just invisible — the
+              // 2px left edge has to be reserved on every row or the label
+              // jumps sideways as selection moves between tabs.
+              "border border-transparent border-l-2 border-l-transparent hover:bg-stone-100/60"
+        } ${isNestTarget ? "ring-2 ring-inset ring-stone-400" : ""}`}
         onDragOver={(e) => {
           if (!editable || drag.draggingFolderId === null) return;
           e.preventDefault();
@@ -514,30 +501,8 @@ function SidebarTabNode({
           if (payload) handleDropOntoSelf(payload);
         }}
       >
-        {/* The physical divider tab's own colored spine. */}
-        <div
-          className={`${depth === 0 ? "w-1.5" : "w-1"} shrink-0 self-stretch rounded-full ${palette.accent}`}
-        />
-        {hasSubtabs ? (
-          <button
-            type="button"
-            onClick={toggleExpand}
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-stone-400 transition-colors hover:bg-stone-200/60 hover:text-stone-700"
-            aria-label={expanded ? "Collapse" : "Expand"}
-          >
-            <ChevronIcon
-              className={`h-3.5 w-3.5 transition-transform duration-150 ${
-                expanded ? "rotate-90" : ""
-              }`}
-            />
-          </button>
-        ) : (
-          // A hollow ring, like a binder hole punch — reads as "nothing
-          // nested here" without the filled dot's suggestion of content.
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center">
-            <span className="h-2 w-2 rounded-full border-[1.5px] border-stone-400 bg-transparent" />
-          </span>
-        )}
+
+
         <button
           type="button"
           draggable={editable}
@@ -551,12 +516,38 @@ function SidebarTabNode({
             drag.setDragOverZoneKey(null);
           }}
           onClick={handleTabClick}
-          className={`flex min-w-0 flex-1 select-none items-center gap-2 py-1.5 pl-1 text-left text-sm transition-colors ${
+          // No leading icon slot at all — a tab with nothing nested starts
+          // flush at the left edge, as specified.
+          className={`flex min-w-0 flex-1 select-none items-center gap-2 py-2 text-left text-sm transition-colors ${
             editable ? "cursor-grab active:cursor-grabbing" : ""
-          } ${isActive ? palette.text : "text-stone-600"}`}
+          } ${
+            isActive
+              ? "font-medium text-stone-900"
+              : depth > 0
+                ? "text-stone-500 group-hover:text-stone-800"
+                : "text-stone-600 group-hover:text-stone-900"
+          }`}
         >
           <span className="truncate">{tab.name}</span>
         </button>
+
+        {hasSubtabs ? (
+          <button
+            type="button"
+            onClick={toggleExpand}
+            className={`order-last flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors hover:bg-stone-200/70 hover:text-stone-900 ${
+              isActive ? "text-stone-600" : "text-stone-400"
+            }`}
+            aria-label={expanded ? "Collapse" : "Expand"}
+            aria-expanded={expanded}
+          >
+            <ChevronIcon
+              className={`h-3.5 w-3.5 transition-transform duration-150 ${
+                expanded ? "rotate-90" : ""
+              }`}
+            />
+          </button>
+        ) : null}
         {editable && (
           <div
             // `flex` unconditionally, never `hidden` (display:none) — a
@@ -601,21 +592,35 @@ function SidebarTabNode({
         )}
       </div>
 
+      </div>
+
       {expanded && children !== null && (
-        <SidebarTabList
-          projectId={projectId}
-          parentFolderId={tab.id}
-          tabs={children}
-          depth={depth + 1}
-          paletteFor={() => palette}
-          activeTabId={activeTabId}
-          tabCounts={tabCounts}
-          subtabCounts={subtabCounts}
-          editable={editable}
-          onNavigate={onNavigate}
-          onChanged={onChanged}
-          drag={drag}
-        />
+        // The row's own rail stops at the row. An expanded subtree sits
+        // between this row and the next sibling, so without a continuation
+        // the master rail breaks for the whole height of the children.
+        // Skipped when this IS the last sibling — its rail already ended at
+        // its own branch, and continuing would recreate the hanging tail.
+        <div className="relative">
+          {depth > 0 && !isLast && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute -left-3 bottom-0 top-0 w-px bg-stone-300"
+            />
+          )}
+          <SidebarTabList
+            projectId={projectId}
+            parentFolderId={tab.id}
+            tabs={children}
+            depth={depth + 1}
+            activeTabId={activeTabId}
+            tabCounts={tabCounts}
+            subtabCounts={subtabCounts}
+            editable={editable}
+            onNavigate={onNavigate}
+            onChanged={onChanged}
+            drag={drag}
+          />
+        </div>
       )}
     </div>
   );

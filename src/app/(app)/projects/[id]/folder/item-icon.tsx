@@ -257,6 +257,30 @@ export function ChevronLeftIcon({ className }: { className?: string }) {
   );
 }
 
+// Collapses / reopens the desktop sidebar. The classic macOS sidebar glyph:
+// a rounded rectangle with a vertical divider a third of the way in, and the
+// left column filled to show which pane toggles.
+//
+// Deliberately not a chevron any more — the tab tree now uses chevrons for
+// expand/collapse, and two chevrons doing different jobs a few pixels apart
+// is what made this control confusing.
+export function SidebarToggleIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      className={className}
+    >
+      <rect x="2.75" y="4.25" width="14.5" height="11.5" rx="2" />
+      <line x1="7.75" y1="4.25" x2="7.75" y2="15.75" />
+      <rect x="2.75" y="4.25" width="5" height="11.5" rx="2" fill="currentColor" stroke="none" opacity="0.28" />
+    </svg>
+  );
+}
+
 // Closes the mobile "Tabs" drawer.
 export function CloseIcon({ className }: { className?: string }) {
   return (
