@@ -20,7 +20,7 @@ import {
 import { formatBytes, getFormatLabel, isPdfFile } from "@/lib/files";
 import { renderBlockContent, tryParseDocJSON } from "@/lib/doc-content";
 import { midpointSortOrder } from "@/lib/sort-order";
-import { blockMatchesQuery, type BlockRow, type FileRow, type FolderRow } from "./data";
+import type { BlockRow, FileRow, FolderRow } from "./data";
 import {
   createFileRecord,
   getFileDownloadUrl,
@@ -147,7 +147,6 @@ export function FolderBrowser({
   } | null>(null);
   const [isLoading, startTransition] = useTransition();
 
-  const [query, setQuery] = useState("");
   const [queue, setQueue] = useState<UploadItem[]>([]);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
 
@@ -167,28 +166,16 @@ export function FolderBrowser({
     onItemsChanged?.();
   }
 
-  function handleQueryChange(next: string) {
-    setQuery(next);
-  }
-
   const blocks = useMemo(() => data?.blocks ?? [], [data]);
   const previewUrls = data?.previewUrls ?? {};
 
-  const trimmedQuery = query.trim();
-  const isFiltering = trimmedQuery !== "";
-  // A plain, instant, direct-children substring filter — no recursion, no
-  // server round trip, since a Sub-tab's own content never shows here.
-  const visibleBlocks = useMemo(
-    () => (isFiltering ? blocks.filter((b) => blockMatchesQuery(b, trimmedQuery)) : blocks),
-    [blocks, trimmedQuery, isFiltering]
-  );
-  // Reordering is off while a search filter is active: the visible list
-  // isn't the real order, so a move would land somewhere unexpected.
-  const canReorder = !isFiltering;
-  const items = useMemo(() => buildStream(visibleBlocks), [visibleBlocks]);
+  // Searching is global now (the header's ProjectSearch), so this list is
+  // always the tab's real contents in their real order — nothing to filter,
+  // and reordering is always available.
+  const canReorder = true;
+  const items = useMemo(() => buildStream(blocks), [blocks]);
 
   const isEmpty = blocks.length === 0;
-  const hasResults = visibleBlocks.length > 0;
 
   function updateItem(id: string, patch: Partial<UploadItem>) {
     setQueue((q) => q.map((it) => (it.id === id ? { ...it, ...patch } : it)));
@@ -318,11 +305,6 @@ export function FolderBrowser({
           </h2>
         </div>
         <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
-          <SearchBox
-            query={query}
-            onQueryChange={handleQueryChange}
-            className="block min-w-0 flex-1 rounded-md border border-stone-300 px-3 py-1.5 text-sm shadow-sm focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500 sm:w-40 sm:flex-none"
-          />
           <>
             <AddMenu
               projectId={projectId}
@@ -338,8 +320,7 @@ export function FolderBrowser({
         </div>
       </div>
 
-      {!hasResults ? (
-        isEmpty ? (
+      {isEmpty ? (
           <div className="flex flex-col items-center gap-4 py-16 text-center">
             <div>
               <h2 className="text-sm font-medium text-stone-700">This tab is empty</h2>
@@ -369,13 +350,7 @@ export function FolderBrowser({
                 Upload File
               </button>
             </div>
-            
           </div>
-        ) : (
-          <p className="py-12 text-center text-sm text-stone-400">
-            No results for &ldquo;{query}&rdquo;.
-          </p>
-        )
       ) : (
         // A plain top-to-bottom pile. New content is appended by "+ Add" in
         // the header; existing content is rearranged with each card's own
@@ -459,28 +434,6 @@ export function FolderBrowser({
   );
 }
 
-function SearchBox({
-  query,
-  onQueryChange,
-  className,
-}: {
-  query: string;
-  onQueryChange: (next: string) => void;
-  className?: string;
-}) {
-  return (
-    <input
-      type="search"
-      value={query}
-      onChange={(e) => onQueryChange(e.target.value)}
-      placeholder="Search this tab"
-      className={
-        className ??
-        "block rounded-md border border-stone-300 px-3 py-1.5 text-sm shadow-sm focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500"
-      }
-    />
-  );
-}
 
 // The canvas header's "+ Add" control — a compact menu instead of three
 // always-visible buttons, so the header stays a single tidy row. Each item

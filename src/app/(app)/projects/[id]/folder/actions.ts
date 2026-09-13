@@ -15,7 +15,9 @@ import {
   getSectionBlocks,
   getSubtabItemCounts,
   getTabItemCounts,
+  searchProject,
   searchSubtree,
+  type ProjectSearchHit,
   type SubtreeSearchResult,
 } from "./data";
 import type { BlockFontFamily, BlockFontSize, BlockRow, BlockType, FolderRow } from "./data";
@@ -637,4 +639,14 @@ export async function searchTabSubtree(
 ): Promise<SubtreeSearchResult> {
   const supabase = await createClient();
   return searchSubtree(supabase, projectId, folderId, query);
+}
+
+// Global search across the whole project — the header's Spotlight-style
+// search box calls this directly (RPC-style, like getTabContents).
+export async function searchInProject(
+  projectId: string,
+  query: string
+): Promise<ProjectSearchHit[]> {
+  const supabase = await createClient();
+  return searchProject(supabase, projectId, query);
 }

@@ -6,6 +6,7 @@ import { getSubtabCounts, getTabContents, getTabCounts } from "./folder/actions"
 import { ProjectFormDialog } from "../project-form-dialog";
 import { BinderWorkspace } from "./binder-workspace";
 import { ExportMenu } from "./export-menu";
+import { ProjectSearch } from "./project-search";
 import { ChevronLeftIcon } from "./folder/item-icon";
 
 export default async function ProjectHomePage(
@@ -59,6 +60,7 @@ export default async function ProjectHomePage(
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
+          <ProjectSearch projectId={project.id} />
           <div className="flex shrink-0 items-center gap-1">
             {/* Inside a tab this offers a scope choice; from the Overview
                 it's a plain link straight to the whole-binder export. */}

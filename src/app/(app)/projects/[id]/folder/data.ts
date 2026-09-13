@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { createSignedUrls } from "@/lib/supabase/storage";
-import { blockContentHasNoteCallout } from "@/lib/doc-content";
+import { blockContentHasNoteCallout, blockContentToPlainText } from "@/lib/doc-content";
 
 export type FolderRow = {
   id: string;
@@ -203,6 +203,116 @@ export type SubtreeSearchResult = {
 // approach, then works out in memory which folders need to stay visible/
 // force-open so a match anywhere inside a nested sub-tab is still reachable
 // from the level where the user typed the query.
+// One hit in the global project search. Flat and self-describing, unlike
+// SubtreeSearchResult's id sets: a Spotlight-style list has to render each
+// result on its own and know where clicking it should land.
+export type ProjectSearchHit = {
+  kind: "tab" | "block";
+  // What to render as the result's title.
+  label: string;
+  // Second line — the tab a block lives in, or the parent of a sub-tab.
+  context: string | null;
+  // Where a click navigates: the tab itself for a tab hit, the containing
+  // tab for a block hit. null means the project's Unsorted view.
+  tabId: string | null;
+};
+
+// Searches the WHOLE project — every tab, sub-tab, and block — rather than
+// one subtree. Two queries and an in-memory match: the corpus is a single
+// project's names and note text, which is small, and doing it here keeps
+// the result shape identical whatever the storage ends up being.
+export async function searchProject(
+  supabase: SupabaseClient,
+  projectId: string,
+  query: string,
+  limit = 20
+): Promise<ProjectSearchHit[]> {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+
+  const [{ data: folders }, { data: blocks }] = await Promise.all([
+    supabase
+      .from("folders")
+      .select("id, name, parent_folder_id")
+      .eq("project_id", projectId),
+    supabase
+      .from("blocks")
+      .select("id, type, content, section_id, file:files(name)")
+      .eq("project_id", projectId),
+  ]);
+
+  const folderList = folders ?? [];
+  const blockList = (blocks ?? []) as unknown as {
+    id: string;
+    type: string;
+    content: string | null;
+    section_id: string | null;
+    file: { name: string } | null;
+  }[];
+
+  const nameOf = new Map(folderList.map((f) => [f.id, f.name]));
+  const parentOf = new Map(folderList.map((f) => [f.id, f.parent_folder_id]));
+
+  const hits: ProjectSearchHit[] = [];
+
+  for (const f of folderList) {
+    if (!f.name.toLowerCase().includes(q)) continue;
+    const parent = f.parent_folder_id ? nameOf.get(f.parent_folder_id) : null;
+    hits.push({ kind: "tab", label: f.name, context: parent ?? null, tabId: f.id });
+  }
+
+  for (const b of blockList) {
+    // A file block is identified by its filename; a note by its text.
+    //
+    // Matched against the FLATTENED text, never the raw column: stored note
+    // content is Tiptap JSON, so searching the raw string both matches
+    // structural keys (a search for "text" or "paragraph" would hit every
+    // note ever written) and produces a snippet of machine output.
+    const fileName = b.file?.name ?? null;
+    const plain = blockContentToPlainText(b.content);
+    const matchedFile = fileName?.toLowerCase().includes(q) ?? false;
+    const matchedText = plain.toLowerCase().includes(q);
+    if (!matchedFile && !matchedText) continue;
+
+    const label = fileName ?? snippet(plain, q);
+    hits.push({
+      kind: "block",
+      label,
+      context: b.section_id ? (nameOf.get(b.section_id) ?? null) : "Unsorted",
+      tabId: b.section_id,
+    });
+  }
+
+  // Tabs first — landing on a tab is usually what someone means when the
+  // name matches — then whichever label starts with the query, since a
+  // prefix match is a stronger signal than a match buried mid-string.
+  hits.sort((a, b) => {
+    if (a.kind !== b.kind) return a.kind === "tab" ? -1 : 1;
+    const aStarts = a.label.toLowerCase().startsWith(q) ? 0 : 1;
+    const bStarts = b.label.toLowerCase().startsWith(q) ? 0 : 1;
+    if (aStarts !== bStarts) return aStarts - bStarts;
+    return a.label.localeCompare(b.label);
+  });
+
+  // Deliberately unused for now, but kept so the shape stays honest if the
+  // sub-tab path ever needs rendering.
+  void parentOf;
+
+  return hits.slice(0, limit);
+}
+
+// A short window of note text around the match, so a result shows why it
+// matched rather than the first few words of the note. Expects text already
+// flattened by blockContentToPlainText.
+function snippet(content: string, q: string, radius = 40): string {
+  const flat = content.replace(/\s+/g, " ").trim();
+  const at = flat.toLowerCase().indexOf(q);
+  if (at === -1) return flat.slice(0, radius * 2);
+  const start = Math.max(0, at - radius);
+  const end = Math.min(flat.length, at + q.length + radius);
+  return (start > 0 ? "…" : "") + flat.slice(start, end) + (end < flat.length ? "…" : "");
+}
+
 export async function searchSubtree(
   supabase: SupabaseClient,
   projectId: string,

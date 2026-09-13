@@ -61,6 +61,30 @@ export function docJSONIsEmpty(doc: DocJSON): boolean {
 // Used by the export/print route's note-filtering and by anywhere else
 // that needs to detect (not render) a Note callout — dispatches by format
 // so the two content types can never drift apart.
+// Flattens a block's stored content down to readable text.
+//
+// New content is Tiptap JSON, so the raw string is full of structural keys
+// ("type", "paragraph", "content"). Anything showing it to a person — or
+// matching a search query against it — has to go through here first, or it
+// both looks like machine output and matches on words nobody wrote.
+// Legacy markdown blocks aren't JSON and pass through unchanged.
+export function blockContentToPlainText(content: string | null | undefined): string {
+  if (!content) return "";
+  const doc = tryParseDocJSON(content);
+  if (!doc) return content.trim();
+  return collectText(doc.content).replace(/\s+/g, " ").trim();
+}
+
+// Block-level nodes are joined with a space so words either side of a
+// paragraph break don't fuse into one ("endstart").
+function collectText(nodes: DocNode[] | undefined): string {
+  if (!nodes) return "";
+  return nodes
+    .map((node) => (node.text ? node.text : collectText(node.content)))
+    .filter(Boolean)
+    .join(" ");
+}
+
 export function blockContentHasNoteCallout(content: string | null | undefined): boolean {
   if (!content) return false;
   const doc = tryParseDocJSON(content);
