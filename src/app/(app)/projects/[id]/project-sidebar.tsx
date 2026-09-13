@@ -41,7 +41,6 @@ export function ProjectSidebar({
   subtabCounts,
   unsortedCount,
   activeTabId,
-  editable,
   onNavigate,
   onChanged,
   mobileOpen,
@@ -56,7 +55,6 @@ export function ProjectSidebar({
   subtabCounts: Record<string, number>;
   unsortedCount: number;
   activeTabId: string | null;
-  editable: boolean;
   // name is the clicked node's own display name — threaded straight
   // through so the canvas header (browser.tsx) can show it immediately
   // without a lookup, since a Sub-tab's name isn't otherwise known outside
@@ -141,21 +139,20 @@ export function ProjectSidebar({
           >
             <SidebarToggleIcon className="h-4 w-4" />
           </button>
-          {editable && (
-            <FolderFormDialog
-              projectId={projectId}
-              parentFolderId={null}
-              triggerLabel="+"
-              triggerClassName="flex h-5 w-5 items-center justify-center rounded-full bg-stone-100 pb-0.5 text-lg font-light text-stone-500 transition-colors hover:bg-stone-200 hover:text-stone-900"
-              dialogTitle="New tab"
-              namePlaceholder="Kitchen"
-              submitLabel="Create tab"
-              onSuccess={(id) => {
-                onChanged();
-                if (id) onNavigate(id);
-              }}
-            />
-          )}
+          <FolderFormDialog
+            projectId={projectId}
+            parentFolderId={null}
+            triggerLabel="+"
+            triggerClassName="flex h-5 w-5 items-center justify-center rounded-full bg-stone-100 pb-0.5 text-lg font-light text-stone-500 transition-colors hover:bg-stone-200 hover:text-stone-900"
+            dialogTitle="New tab"
+            namePlaceholder="Kitchen"
+            submitLabel="Create tab"
+            onSuccess={(id) => {
+              onChanged();
+              if (id) onNavigate(id);
+            }}
+          />
+          
         </div>
 
         <div className="mt-1">
@@ -170,7 +167,6 @@ export function ProjectSidebar({
             activeTabId={activeTabId}
             tabCounts={tabCounts}
             subtabCounts={subtabCounts}
-            editable={editable}
             onNavigate={onNavigate}
             onChanged={onChanged}
             drag={drag}
@@ -215,7 +211,6 @@ function SidebarTabList({
   activeTabId,
   tabCounts,
   subtabCounts,
-  editable,
   onNavigate,
   onChanged,
   drag,
@@ -227,7 +222,6 @@ function SidebarTabList({
   activeTabId: string | null;
   tabCounts: Record<string, number>;
   subtabCounts: Record<string, number>;
-  editable: boolean;
   onNavigate: (id: string | null, name?: string) => void;
   onChanged: () => void;
   drag: DragState;
@@ -246,7 +240,7 @@ function SidebarTabList({
     const key = `${listKey}:${index}`;
     return (
       <DividerDropZone
-        active={editable && drag.draggingFolderId !== null}
+        active={drag.draggingFolderId !== null}
         isOver={drag.dragOverZoneKey === key}
         onDragOverZone={() => drag.setDragOverZoneKey(key)}
         onDragLeaveZone={() => drag.setDragOverZoneKey((k) => (k === key ? null : k))}
@@ -279,7 +273,6 @@ function SidebarTabList({
             activeTabId={activeTabId}
             tabCounts={tabCounts}
             subtabCounts={subtabCounts}
-            editable={editable}
             onNavigate={onNavigate}
             onChanged={onChanged}
             drag={drag}
@@ -299,7 +292,6 @@ function SidebarTabNode({
   activeTabId,
   tabCounts,
   subtabCounts,
-  editable,
   onNavigate,
   onChanged,
   drag,
@@ -313,7 +305,6 @@ function SidebarTabNode({
   activeTabId: string | null;
   tabCounts: Record<string, number>;
   subtabCounts: Record<string, number>;
-  editable: boolean;
   onNavigate: (id: string | null, name?: string) => void;
   onChanged: () => void;
   drag: DragState;
@@ -479,7 +470,7 @@ function SidebarTabNode({
               "border border-transparent border-l-2 border-l-transparent hover:bg-stone-100/60"
         } ${isNestTarget ? "ring-2 ring-inset ring-stone-400" : ""}`}
         onDragOver={(e) => {
-          if (!editable || drag.draggingFolderId === null) return;
+          if (drag.draggingFolderId === null) return;
           e.preventDefault();
           e.dataTransfer.dropEffect = "move";
           drag.setDragOverRowId(tab.id);
@@ -493,7 +484,6 @@ function SidebarTabNode({
           drag.setDragOverRowId((id) => (id === tab.id ? null : id));
         }}
         onDrop={(e) => {
-          if (!editable) return;
           e.preventDefault();
           e.stopPropagation();
           drag.setDragOverRowId(null);
@@ -505,7 +495,7 @@ function SidebarTabNode({
 
         <button
           type="button"
-          draggable={editable}
+          draggable
           onDragStart={(e) => {
             setDragPayload(e, { kind: "folder", id: tab.id });
             drag.setDraggingFolderId(tab.id);
@@ -518,9 +508,7 @@ function SidebarTabNode({
           onClick={handleTabClick}
           // No leading icon slot at all — a tab with nothing nested starts
           // flush at the left edge, as specified.
-          className={`flex min-w-0 flex-1 select-none items-center gap-2 py-2 text-left text-sm transition-colors ${
-            editable ? "cursor-grab active:cursor-grabbing" : ""
-          } ${
+          className={`flex min-w-0 flex-1 cursor-grab select-none items-center gap-2 py-2 text-left text-sm transition-colors active:cursor-grabbing ${
             isActive
               ? "font-medium text-stone-900"
               : depth > 0
@@ -548,48 +536,47 @@ function SidebarTabNode({
             />
           </button>
         ) : null}
-        {editable && (
-          <div
-            // `flex` unconditionally, never `hidden` (display:none) — a
-            // native <dialog> shown via showModal() renders in the top
-            // layer, but the browser still hides it the instant an
-            // ANCESTOR's computed display becomes none, even though its
-            // own `.open` stays true. Since Rename/Delete's dialogs live
-            // right inside this div, hiding it via display (as `hidden
-            // group-hover:flex` used to) made an already-open dialog
-            // silently vanish the moment the mouse left the row on its way
-            // to the modal. Opacity alone gets the same hover-reveal look
-            // without ever touching display — and deliberately skips
-            // pointer-events-none too: since it's an inherited property, it
-            // would reach down into an already-open dialog's own Cancel/
-            // Delete buttons and make them uninteractable the moment the
-            // mouse leaves the row. Not needed anyway — these buttons sit
-            // entirely inside the row, so there's no position where they'd
-            // be both invisible and hoverable at once.
-            className={`flex shrink-0 items-center gap-0.5 transition-opacity ${
-              isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-            }`}
-            // The row itself is a drag source and (via its sibling
-            // navigate button) a click-to-navigate target — clicks here
-            // are for Rename/Delete only, never either of those.
-            onClick={(e) => e.stopPropagation()}
-          >
-            <RenameDialog
-              kind="folder"
-              itemId={tab.id}
-              projectId={projectId}
-              currentName={tab.name}
-              onSuccess={onChanged}
-            />
-            <DeleteItemDialog
-              kind="folder"
-              itemId={tab.id}
-              projectId={projectId}
-              itemName={tab.name}
-              onSuccess={handleDeleted}
-            />
-          </div>
-        )}
+        <div
+          // `flex` unconditionally, never `hidden` (display:none) — a
+          // native <dialog> shown via showModal() renders in the top
+          // layer, but the browser still hides it the instant an
+          // ANCESTOR's computed display becomes none, even though its
+          // own `.open` stays true. Since Rename/Delete's dialogs live
+          // right inside this div, hiding it via display (as `hidden
+          // group-hover:flex` used to) made an already-open dialog
+          // silently vanish the moment the mouse left the row on its way
+          // to the modal. Opacity alone gets the same hover-reveal look
+          // without ever touching display — and deliberately skips
+          // pointer-events-none too: since it's an inherited property, it
+          // would reach down into an already-open dialog's own Cancel/
+          // Delete buttons and make them uninteractable the moment the
+          // mouse leaves the row. Not needed anyway — these buttons sit
+          // entirely inside the row, so there's no position where they'd
+          // be both invisible and hoverable at once.
+          className={`flex shrink-0 items-center gap-0.5 transition-opacity ${
+            isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
+          // The row itself is a drag source and (via its sibling
+          // navigate button) a click-to-navigate target — clicks here
+          // are for Rename/Delete only, never either of those.
+          onClick={(e) => e.stopPropagation()}
+        >
+          <RenameDialog
+            kind="folder"
+            itemId={tab.id}
+            projectId={projectId}
+            currentName={tab.name}
+            onSuccess={onChanged}
+          />
+          <DeleteItemDialog
+            kind="folder"
+            itemId={tab.id}
+            projectId={projectId}
+            itemName={tab.name}
+            onSuccess={handleDeleted}
+          />
+        </div>
+        
       </div>
 
       </div>
@@ -615,7 +602,6 @@ function SidebarTabNode({
             activeTabId={activeTabId}
             tabCounts={tabCounts}
             subtabCounts={subtabCounts}
-            editable={editable}
             onNavigate={onNavigate}
             onChanged={onChanged}
             drag={drag}

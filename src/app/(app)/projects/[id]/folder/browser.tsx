@@ -117,7 +117,6 @@ export function FolderBrowser({
   folderId,
   name,
   onItemsChanged,
-  editable,
 }: {
   projectId: string;
   userId: string;
@@ -138,7 +137,6 @@ export function FolderBrowser({
   // down): false hides the reorder controls and every edit/rename/move/
   // delete affordance, leaving a clean read-only presentation view.
   // Everything stays fully readable/navigable either way.
-  editable: boolean;
 }) {
   const isUnsorted = folderId === null;
 
@@ -184,7 +182,9 @@ export function FolderBrowser({
     () => (isFiltering ? blocks.filter((b) => blockMatchesQuery(b, trimmedQuery)) : blocks),
     [blocks, trimmedQuery, isFiltering]
   );
-  const canReorder = editable && !isFiltering;
+  // Reordering is off while a search filter is active: the visible list
+  // isn't the real order, so a move would land somewhere unexpected.
+  const canReorder = !isFiltering;
   const items = useMemo(() => buildStream(visibleBlocks), [visibleBlocks]);
 
   const isEmpty = blocks.length === 0;
@@ -296,7 +296,7 @@ export function FolderBrowser({
   return (
     <div
       onDragOver={(e) => {
-        if (editable && e.dataTransfer.types.includes("Files")) {
+        if (e.dataTransfer.types.includes("Files")) {
           e.preventDefault();
           setIsDraggingFile(true);
         }
@@ -305,7 +305,7 @@ export function FolderBrowser({
       onDrop={(e) => {
         e.preventDefault();
         setIsDraggingFile(false);
-        if (editable && e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files);
+        if (e.dataTransfer.files.length > 0) uploadFiles(e.dataTransfer.files);
       }}
       className={`rounded-lg border-2 border-dashed transition-colors ${
         isDraggingFile ? "border-stone-300 bg-stone-50" : "border-transparent"
@@ -323,19 +323,18 @@ export function FolderBrowser({
             onQueryChange={handleQueryChange}
             className="block min-w-0 flex-1 rounded-md border border-stone-300 px-3 py-1.5 text-sm shadow-sm focus:border-stone-500 focus:outline-none focus:ring-1 focus:ring-stone-500 sm:w-40 sm:flex-none"
           />
-          {editable && (
-            <>
-              <AddMenu
-                projectId={projectId}
-                folderId={folderId}
-                isUnsorted={isUnsorted}
-                onUploadFiles={() => pickAndUploadFiles()}
-                onSuccess={refresh}
-              />
-              {/* Renaming a tab lives only in the sidebar row now, so the
-                  tab's name has exactly one edit affordance. */}
-            </>
-          )}
+          <>
+            <AddMenu
+              projectId={projectId}
+              folderId={folderId}
+              isUnsorted={isUnsorted}
+              onUploadFiles={() => pickAndUploadFiles()}
+              onSuccess={refresh}
+            />
+            {/* Renaming a tab lives only in the sidebar row now, so the
+                tab's name has exactly one edit affordance. */}
+          </>
+          
         </div>
       </div>
 
@@ -349,29 +348,28 @@ export function FolderBrowser({
                 the text toolbar.
               </p>
             </div>
-            {editable && (
-              <div className="flex flex-wrap justify-center gap-2">
-                <BlockFormDialog
-                  projectId={projectId}
-                  sectionId={folderId}
-                  mode="create"
-                  kind="text"
-                  dialogTitle="New text block"
-                  placeholder="Write anything worth remembering about this tab…"
-                  submitLabel="Add block"
-                  triggerLabel="+ Text"
-                  onSuccess={refresh}
-                />
-                <button
-                  type="button"
-                  onClick={() => pickAndUploadFiles()}
-                  className="flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
-                >
-                  <UploadIcon className="h-4 w-4" />
-                  Upload File
-                </button>
-              </div>
-            )}
+            <div className="flex flex-wrap justify-center gap-2">
+              <BlockFormDialog
+                projectId={projectId}
+                sectionId={folderId}
+                mode="create"
+                kind="text"
+                dialogTitle="New text block"
+                placeholder="Write anything worth remembering about this tab…"
+                submitLabel="Add block"
+                triggerLabel="+ Text"
+                onSuccess={refresh}
+              />
+              <button
+                type="button"
+                onClick={() => pickAndUploadFiles()}
+                className="flex items-center gap-1.5 rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
+              >
+                <UploadIcon className="h-4 w-4" />
+                Upload File
+              </button>
+            </div>
+            
           </div>
         ) : (
           <p className="py-12 text-center text-sm text-stone-400">
@@ -399,7 +397,6 @@ export function FolderBrowser({
                   projectId={projectId}
                   block={item.block}
                   previewUrl={item.block.file ? previewUrls[item.block.file.storage_key] : undefined}
-                  editable={editable}
                   onChanged={refresh}
                 />
               ) : (
@@ -407,7 +404,6 @@ export function FolderBrowser({
                   projectId={projectId}
                   blocks={item.blocks}
                   imageUrls={previewUrls}
-                  editable={editable}
                   onChanged={refresh}
                 />
               )}
@@ -657,7 +653,6 @@ function BlockItem({
   projectId,
   block,
   previewUrl,
-  editable,
   onChanged,
 }: {
   projectId: string;
@@ -665,7 +660,6 @@ function BlockItem({
   // Signed URL for a previewable file — an image, a video, or a PDF.
   // Undefined for file types we show a badge for instead.
   previewUrl?: string;
-  editable: boolean;
   onChanged: () => void;
 }) {
   switch (block.type) {
@@ -674,7 +668,6 @@ function BlockItem({
         <TextBlockRow
           projectId={projectId}
           block={block}
-          editable={editable}
           onChanged={onChanged}
         />
       );
@@ -684,7 +677,6 @@ function BlockItem({
           projectId={projectId}
           block={block}
           imageUrl={previewUrl}
-          editable={editable}
           onChanged={onChanged}
         />
       );
@@ -694,7 +686,6 @@ function BlockItem({
           projectId={projectId}
           block={block}
           previewUrl={previewUrl}
-          editable={editable}
           onChanged={onChanged}
         />
       );
@@ -704,7 +695,6 @@ function BlockItem({
           projectId={projectId}
           block={block}
           previewUrl={previewUrl}
-          editable={editable}
           onChanged={onChanged}
         />
       );
@@ -717,12 +707,10 @@ function BlockItem({
 function TextBlockRow({
   projectId,
   block,
-  editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
-  editable: boolean;
   onChanged: () => void;
 }) {
   return (
@@ -750,37 +738,36 @@ function TextBlockRow({
         >
           {renderBlockContent(block.content)}
         </div>
-        {editable && (
-          // draggable={false} so a press on Edit/Delete never starts the
-          // card's drag instead of the click, and cursor-pointer so they
-          // don't inherit the card's grab cursor.
-          <div
-            draggable={false}
-            className="absolute right-3 top-3 flex cursor-pointer gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover:opacity-100"
-          >
-            <BlockFormDialog
+        {/* draggable={false} so a press on Edit/Delete never starts the
+            card's drag instead of the click, and cursor-pointer so they
+            don't inherit the card's grab cursor. */}
+        <div
+          draggable={false}
+          className="absolute right-3 top-3 flex cursor-pointer gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover:opacity-100"
+        >
+          <BlockFormDialog
+            projectId={projectId}
+            mode="edit"
+            kind="text"
+            blockId={block.id}
+            initialContent={block.content ?? ""}
+            dialogTitle="Edit text block"
+            submitLabel="Save"
+            triggerLabel="Edit"
+            triggerClassName="cursor-pointer rounded-md bg-white/90 px-2 py-1 text-xs font-medium text-stone-600 shadow-sm backdrop-blur-sm transition-colors hover:bg-white"
+            onSuccess={onChanged}
+          />
+          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+            <DeleteItemDialog
+              kind="block"
+              itemId={block.id}
               projectId={projectId}
-              mode="edit"
-              kind="text"
-              blockId={block.id}
-              initialContent={block.content ?? ""}
-              dialogTitle="Edit text block"
-              submitLabel="Save"
-              triggerLabel="Edit"
-              triggerClassName="cursor-pointer rounded-md bg-white/90 px-2 py-1 text-xs font-medium text-stone-600 shadow-sm backdrop-blur-sm transition-colors hover:bg-white"
+              itemName="text block"
               onSuccess={onChanged}
             />
-            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-              <DeleteItemDialog
-                kind="block"
-                itemId={block.id}
-                projectId={projectId}
-                itemName="text block"
-                onSuccess={onChanged}
-              />
-            </div>
           </div>
-        )}
+        </div>
+        
       </div>
     </div>
   );
@@ -795,13 +782,11 @@ function PhotoBlockRow({
   projectId,
   block,
   imageUrl,
-  editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
   imageUrl?: string;
-  editable: boolean;
   onChanged: () => void;
 }) {
   const file = block.file;
@@ -824,7 +809,6 @@ function PhotoBlockRow({
           imageUrl={imageUrl}
           caption={block.content}
           blockId={block.id}
-          editable={editable}
           onChanged={onChanged}
         />
       </div>
@@ -841,7 +825,6 @@ function PhotoCardBody({
   imageUrl,
   caption,
   blockId,
-  editable,
   onChanged,
 }: {
   projectId: string;
@@ -849,7 +832,6 @@ function PhotoCardBody({
   imageUrl?: string;
   caption: string | null;
   blockId: string;
-  editable: boolean;
   onChanged: () => void;
 }) {
   return (
@@ -877,39 +859,37 @@ function PhotoCardBody({
             )}
           </div>
         </FileOpenButton>
-        {editable && (
-          <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/photo:opacity-100">
-            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-              <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
-            </div>
-            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-              <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-            </div>
-            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-              <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-            </div>
+        <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/photo:opacity-100">
+          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+            <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
           </div>
-        )}
+          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+            <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+          </div>
+          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+            <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+          </div>
+        </div>
+        
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-2 px-0.5">
         <p className="min-w-0 flex-1 truncate text-xs italic text-stone-500">
           {caption || <span className="text-stone-300">No caption</span>}
         </p>
-        {editable && (
-          <BlockFormDialog
-            projectId={projectId}
-            mode="edit"
-            kind="caption"
-            blockId={blockId}
-            initialContent={caption ?? ""}
-            dialogTitle="Edit caption"
-            placeholder="Add a caption"
-            submitLabel="Save"
-            triggerLabel={caption ? "Edit" : "+ Caption"}
-            triggerClassName="shrink-0 text-xs font-medium text-stone-400 transition-colors hover:text-stone-700"
-            onSuccess={onChanged}
-          />
-        )}
+        <BlockFormDialog
+          projectId={projectId}
+          mode="edit"
+          kind="caption"
+          blockId={blockId}
+          initialContent={caption ?? ""}
+          dialogTitle="Edit caption"
+          placeholder="Add a caption"
+          submitLabel="Save"
+          triggerLabel={caption ? "Edit" : "+ Caption"}
+          triggerClassName="shrink-0 text-xs font-medium text-stone-400 transition-colors hover:text-stone-700"
+          onSuccess={onChanged}
+        />
+        
       </div>
     </>
   );
@@ -923,13 +903,11 @@ function PhotoGrid({
   projectId,
   blocks,
   imageUrls,
-  editable,
   onChanged,
 }: {
   projectId: string;
   blocks: BlockRow[];
   imageUrls: Record<string, string>;
-  editable: boolean;
   onChanged: () => void;
 }) {
   return (
@@ -942,7 +920,6 @@ function PhotoGrid({
           projectId={projectId}
           block={block}
           imageUrl={block.file ? imageUrls[block.file.storage_key] : undefined}
-          editable={editable}
           onChanged={onChanged}
         />
       ))}
@@ -954,13 +931,11 @@ function PhotoGridItem({
   projectId,
   block,
   imageUrl,
-  editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
   imageUrl?: string;
-  editable: boolean;
   onChanged: () => void;
 }) {
   const file = block.file;
@@ -974,7 +949,6 @@ function PhotoGridItem({
         imageUrl={imageUrl}
         caption={block.content}
         blockId={block.id}
-        editable={editable}
         onChanged={onChanged}
       />
     </div>
@@ -985,13 +959,11 @@ function VideoBlockRow({
   projectId,
   block,
   previewUrl,
-  editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
   previewUrl?: string;
-  editable: boolean;
   onChanged: () => void;
 }) {
   const file = block.file;
@@ -1042,19 +1014,18 @@ function VideoBlockRow({
             <p className="text-xs text-stone-400">{formatBytes(file.size_bytes)}</p>
           </div>
         </FileOpenButton>
-        {editable && (
-          <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/video:opacity-100">
-            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-              <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
-            </div>
-            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-              <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-            </div>
-            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-              <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-            </div>
+        <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/video:opacity-100">
+          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+            <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
           </div>
-        )}
+          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+            <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+          </div>
+          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+            <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+          </div>
+        </div>
+        
       </div>
     </div>
   );
@@ -1072,13 +1043,11 @@ function DocumentBlockRow({
   projectId,
   block,
   previewUrl,
-  editable,
   onChanged,
 }: {
   projectId: string;
   block: BlockRow;
   previewUrl?: string;
-  editable: boolean;
   onChanged: () => void;
 }) {
   const file = block.file;
@@ -1170,23 +1139,22 @@ function DocumentBlockRow({
           <p className="mt-0.5 text-xs text-stone-400">{formatBytes(file.size_bytes)}</p>
         </div>
 
-        {editable && (
-          <div
-            draggable={false}
-            onClick={(e) => e.stopPropagation()}
-            className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/file:opacity-100"
-          >
-            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-              <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
-            </div>
-            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-              <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-            </div>
-            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-              <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-            </div>
+        <div
+          draggable={false}
+          onClick={(e) => e.stopPropagation()}
+          className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/file:opacity-100"
+        >
+          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+            <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
           </div>
-        )}
+          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+            <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+          </div>
+          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+            <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+          </div>
+        </div>
+        
       </div>
     </div>
   );

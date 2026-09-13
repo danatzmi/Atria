@@ -6,15 +6,16 @@ import { getSubtabCounts, getTabContents, getTabCounts } from "./folder/actions"
 import { ProjectFormDialog } from "../project-form-dialog";
 import { BinderWorkspace } from "./binder-workspace";
 import { ExportMenu } from "./export-menu";
-import { ViewModeToggle } from "./view-mode-toggle";
 import { ChevronLeftIcon } from "./folder/item-icon";
 
 export default async function ProjectHomePage(
   props: PageProps<"/projects/[id]">
 ) {
   const { id } = await props.params;
-  const searchParams = await props.searchParams;
-  const isViewMode = searchParams.mode === "view";
+  // Deliberately never reads props.searchParams: a page that does is
+  // re-rendered on the server for every ?tab= change, which is what the
+  // pushState tab-switching fix exists to avoid. Nothing here depends on
+  // the query string any more now that the view/edit mode is gone.
   const { supabase, project } = await getProjectOrNotFound(id);
 
   const {
@@ -54,13 +55,10 @@ export default async function ProjectHomePage(
             >
               {project.name}
             </Link>
-            {!isViewMode && (
-              <ProjectFormDialog mode="edit" field="name" project={project} />
-            )}
+            <ProjectFormDialog mode="edit" field="name" project={project} />
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <ViewModeToggle />
           <div className="flex shrink-0 items-center gap-1">
             {/* Inside a tab this offers a scope choice; from the Overview
                 it's a plain link straight to the whole-binder export. */}

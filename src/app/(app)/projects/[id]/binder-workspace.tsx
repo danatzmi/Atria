@@ -57,12 +57,6 @@ export function BinderWorkspace({
   // and back/forward for "which Tab is open" keep working. Expansion of
   // Sub-tabs in the sidebar tree, and inside the canvas, is local state.
   const activeTabId = searchParams.get("tab");
-  // View Mode vs Edit Mode — the ?mode= toggle lives in the project page's
-  // header (view-mode-toggle.tsx) and reads/writes this same URL param, so
-  // it's shareable/bookmarkable just like which tab is open. Edit is the
-  // default (unset), matching the app's existing always-editable behavior.
-  const editable = searchParams.get("mode") !== "view";
-
   const [tabs, setTabs] = useState<Tab[]>(
     initialTabs.map((f) => ({ id: f.id, name: f.name, sort_order: f.sort_order }))
   );
@@ -222,7 +216,6 @@ export function BinderWorkspace({
         subtabCounts={subtabCounts}
         unsortedCount={unsortedCount}
         activeTabId={activeTabId}
-        editable={editable}
         onNavigate={navigateFromSidebar}
         onChanged={refreshTabs}
         mobileOpen={mobileDrawerOpen}
@@ -262,7 +255,6 @@ export function BinderWorkspace({
             coverImageUrl={coverImageUrl}
             hasCoverImage={hasCoverImage}
             projectId={projectId}
-            editable={editable}
             tabs={tabs}
             subtabCounts={subtabCounts}
             onSelectTab={navigate}
@@ -274,7 +266,6 @@ export function BinderWorkspace({
             folderId={activeTabId === UNSORTED ? null : activeTabId}
             name={activeTabName}
             onItemsChanged={refreshTabs}
-            editable={editable}
           />
         )}
       </div>
@@ -293,7 +284,6 @@ function ProjectOverview({
   coverImageUrl,
   hasCoverImage,
   projectId,
-  editable,
   tabs,
   subtabCounts,
   onSelectTab,
@@ -303,7 +293,6 @@ function ProjectOverview({
   coverImageUrl: string | null;
   hasCoverImage: boolean;
   projectId: string;
-  editable: boolean;
   // Only used below md, where the sidebar is hidden behind a drawer — see
   // the tab index at the bottom of this component.
   tabs: Tab[];
@@ -348,11 +337,10 @@ function ProjectOverview({
             </svg>
           </div>
         )}
-        {editable && (
-          <div className="absolute bottom-3 right-3">
-            <CoverImageDialog projectId={projectId} hasCoverImage={hasCoverImage} />
-          </div>
-        )}
+        <div className="absolute bottom-3 right-3">
+          <CoverImageDialog projectId={projectId} hasCoverImage={hasCoverImage} />
+        </div>
+        
       </div>
 
       {description ? (
@@ -361,30 +349,27 @@ function ProjectOverview({
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
               Overview
             </h3>
-            {editable && (
-              <ProjectFormDialog
-                mode="edit"
-                field="overview"
-                project={{ id: projectId, name: projectName, description }}
-              />
-            )}
+            <ProjectFormDialog
+              mode="edit"
+              field="overview"
+              project={{ id: projectId, name: projectName, description }}
+            />
+            
           </div>
           <p className="mt-3 whitespace-pre-line text-base leading-relaxed text-stone-600">
             {description}
           </p>
         </div>
       ) : (
-        editable && (
-          <div className="mt-6">
-            <ProjectFormDialog
-              mode="edit"
-              field="overview"
-              project={{ id: projectId, name: projectName, description }}
-              triggerLabel="+ Add overview"
-              triggerClassName="flex items-center gap-1.5 text-xs font-medium text-stone-400 transition-colors hover:text-stone-700"
-            />
-          </div>
-        )
+        <div className="mt-6">
+          <ProjectFormDialog
+            mode="edit"
+            field="overview"
+            project={{ id: projectId, name: projectName, description }}
+            triggerLabel="+ Add overview"
+            triggerClassName="flex items-center gap-1.5 text-xs font-medium text-stone-400 transition-colors hover:text-stone-700"
+          />
+        </div>
       )}
 
       {/* Mobile-only tab index. Below md the sidebar is a drawer, so opening
