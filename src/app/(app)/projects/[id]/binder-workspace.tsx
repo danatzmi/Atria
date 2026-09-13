@@ -195,7 +195,10 @@ export function BinderWorkspace({
 
   return (
     <div className="flex w-full flex-1 flex-col md:flex-row">
-      <div className="flex items-center justify-between gap-3 border-b border-stone-200 px-4 py-3 md:hidden">
+      {/* Just the drawer toggle. The active tab's name used to sit on the
+          right of this bar, but the canvas below already renders it as a
+          heading a few pixels further down. */}
+      <div className="flex items-center border-b border-stone-200 px-4 py-3 md:hidden">
         <button
           type="button"
           onClick={() => setMobileDrawerOpen(true)}
@@ -204,9 +207,6 @@ export function BinderWorkspace({
           <MenuIcon className="h-4 w-4" />
           Tabs
         </button>
-        <span className="min-w-0 flex-1 truncate text-right text-sm font-medium text-stone-500">
-          {activeTabId === null ? "Overview" : (activeTabName ?? "")}
-        </span>
       </div>
 
       <ProjectSidebar
