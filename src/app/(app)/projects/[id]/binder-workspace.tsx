@@ -11,7 +11,7 @@ import {
 } from "./folder/actions";
 import type { FolderRow } from "./folder/data";
 import { FolderBrowser } from "./folder/browser";
-import { ChevronIcon, ChevronLeftIcon, MenuIcon } from "./folder/item-icon";
+import { ChevronIcon, MenuIcon, SidebarToggleIcon } from "./folder/item-icon";
 import { CoverImageDialog } from "./cover-image-dialog";
 import { ProjectFormDialog } from "../project-form-dialog";
 import { ProjectSidebar, UNSORTED } from "./project-sidebar";
@@ -241,11 +241,17 @@ export function BinderWorkspace({
             onClick={() => setSidebarCollapsed(false)}
             aria-label="Show tabs"
             title="Show tabs"
-            className="mb-4 hidden items-center gap-2 rounded-md border border-stone-300 px-3 py-1.5 text-sm font-medium text-stone-600 transition-colors hover:bg-stone-50 hover:text-stone-900 md:flex"
+            // The exact same glyph the sidebar collapses with, unmirrored:
+            // one control, one visual language, whichever side it's on.
+            //
+            // Labelled, unlike its counterpart in the sidebar header. That
+            // one sits directly above the tab list, so its job is obvious
+            // from context; this one appears alone on an empty canvas with
+            // the whole sidebar gone, and a bare glyph there asks the
+            // reader to already know what it does.
+            className="mb-4 hidden items-center gap-2 rounded-md px-2 py-1.5 text-sm font-medium text-stone-500 transition-colors hover:bg-stone-100 hover:text-stone-900 md:flex"
           >
-            {/* Mirrored to point right (›) — the same chevron the sidebar
-                collapses with, pointing back the way it came. */}
-            <ChevronLeftIcon className="h-4 w-4 rotate-180" />
+            <SidebarToggleIcon className="h-4 w-4" />
             Tabs
           </button>
         )}
