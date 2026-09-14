@@ -538,13 +538,7 @@ function MobileTabRow({
               }`}
             />
           </button>
-        ) : (
-          // Nothing to expand — a plain "opens this tab" marker, kept pale and
-          // unseparated so it doesn't invite a tap of its own.
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center">
-            <ChevronIcon className="pointer-events-none h-4 w-4 text-stone-300" />
-          </span>
-        )}
+        ) : null}
       </div>
 
       {expanded && (
@@ -555,10 +549,9 @@ function MobileTabRow({
               <button
                 type="button"
                 onClick={() => onSelectTab(child.id, child.name)}
-                className="flex w-full items-center justify-between gap-3 py-3 pl-6 pr-4 text-left transition-colors active:bg-stone-100"
+                className="flex w-full items-center py-3 pl-6 pr-4 text-left transition-colors active:bg-stone-100"
               >
                 <span className="min-w-0 truncate text-sm text-stone-600">{child.name}</span>
-                <ChevronIcon className="pointer-events-none h-3.5 w-3.5 shrink-0 text-stone-300" />
               </button>
             </li>
           ))}

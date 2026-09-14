@@ -38,30 +38,46 @@ export default async function ProjectHomePage(
 
   return (
     <div className="flex w-full flex-1 flex-col">
-      <header className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-zinc-200 px-6 py-4">
-        <div className="flex min-w-0 items-center gap-4">
-          <Link
-            href="/projects"
-            className="group flex shrink-0 items-center gap-0.5 text-[13px] font-medium text-zinc-500 transition-colors hover:text-zinc-900"
-          >
-            <ChevronLeftIcon className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
-            Projects
-          </Link>
-          {/* The title doubles as the way back to the project home view —
-              it replaces the sidebar's old "Overview" row. */}
-          <div className="flex min-w-0 items-center gap-1">
-            <Link
-              href={`/projects/${project.id}`}
-              className="truncate text-lg font-semibold tracking-tight text-zinc-900 transition-colors hover:text-zinc-600"
-            >
-              {project.name}
-            </Link>
-            <ProjectFormDialog mode="edit" field="name" project={project} />
+      {/* Two rows on mobile, one on desktop. flex-wrap alone put the
+          search box on its own line at awkward widths and left the export
+          icon stranded; an explicit stack is predictable at every size.
+          Row 1: back link + title on the left, export on the right.
+          Row 2: search, full width — then folded into the same row at sm. */}
+      <header className="border-b border-zinc-200 px-6 py-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+          <div className="flex w-full min-w-0 items-center justify-between gap-4 sm:w-auto sm:flex-1">
+            <div className="flex min-w-0 items-center gap-4">
+              <Link
+                href="/projects"
+                className="group flex shrink-0 items-center gap-0.5 text-[13px] font-medium text-zinc-500 transition-colors hover:text-zinc-900"
+              >
+                <ChevronLeftIcon className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
+                Projects
+              </Link>
+              {/* The title doubles as the way back to the project home view —
+                  it replaces the sidebar's old "Overview" row. */}
+              <div className="flex min-w-0 items-center gap-1">
+                <Link
+                  href={`/projects/${project.id}`}
+                  className="truncate text-lg font-semibold tracking-tight text-zinc-900 transition-colors hover:text-zinc-600"
+                >
+                  {project.name}
+                </Link>
+                <ProjectFormDialog mode="edit" field="name" project={project} />
+              </div>
+            </div>
+
+            {/* Rides along with the title row on mobile so row 1 has
+                something anchoring its right edge; on desktop it moves to
+                the end of the single row (order-last below). */}
+            <div className="flex shrink-0 items-center gap-1 sm:hidden">
+              <ExportMenu projectId={project.id} />
+            </div>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
+
           <ProjectSearch projectId={project.id} />
-          <div className="flex shrink-0 items-center gap-1">
+
+          <div className="hidden shrink-0 items-center gap-1 sm:flex">
             {/* Inside a tab this offers a scope choice; from the Overview
                 it's a plain link straight to the whole-binder export. */}
             <ExportMenu projectId={project.id} />
