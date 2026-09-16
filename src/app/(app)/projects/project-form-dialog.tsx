@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { createProject, renameProject, type ProjectActionState } from "./actions";
 
 const initialState: ProjectActionState = { error: null };
@@ -181,9 +182,23 @@ export function ProjectFormDialog(props: ProjectFormDialogProps) {
               )}
             </div>
 
-            {state.error && (
-              <p className="mt-4 text-sm text-red-600">{state.error}</p>
-            )}
+            {state.error &&
+              (state.atPlanLimit ? (
+                // Hitting a plan ceiling isn't a mistake to correct, so it
+                // gets a calm panel and a way forward rather than red
+                // validation text the user can do nothing about.
+                <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-3">
+                  <p className="text-sm text-zinc-700">{state.error}</p>
+                  <Link
+                    href="/#pricing"
+                    className="mt-2 inline-block text-sm font-medium text-zinc-900 underline underline-offset-2 transition-colors hover:text-zinc-600"
+                  >
+                    See plans
+                  </Link>
+                </div>
+              ) : (
+                <p className="mt-4 text-sm text-red-600">{state.error}</p>
+              ))}
 
             <div className="mt-6 flex justify-end gap-2">
               <button

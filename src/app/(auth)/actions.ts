@@ -2,6 +2,8 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createCheckoutSession } from "@/app/(marketing)/checkout-actions";
+import type { PaidPlanTier } from "@/lib/payments";
 
 export type AuthActionState = {
   error: string | null;
@@ -54,6 +56,13 @@ export async function signUp(
   const email = String(formData.get("email") ?? "");
   const password = String(formData.get("password") ?? "");
   const name = String(formData.get("name") ?? "");
+  // Carried through from the pricing widget's "Continue with Basic/Pro".
+  // Anything other than a paid tier is treated as no intent at all — this
+  // value decides whether someone is sent to a payment screen, so it is
+  // validated rather than trusted.
+  const rawPlan = String(formData.get("plan") ?? "");
+  const paidPlan: PaidPlanTier | null =
+    rawPlan === "basic" || rawPlan === "pro" ? rawPlan : null;
 
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signUp({
@@ -78,17 +87,40 @@ export async function signUp(
   if (!data.session) {
     return {
       error: null,
-      notice:
-        "Account created. Check your email for a confirmation link, then sign in.",
+      notice: paidPlan
+        ? // No session means no authenticated user, so a checkout can't be
+          // created yet. Saying "you'll be able to" rather than silently
+          // dropping the plan, since the account itself is already made.
+          "Account created. Check your email for a confirmation link — you can start your subscription once you're signed in."
+        : "Account created. Check your email for a confirmation link, then sign in.",
     };
   }
 
-  // Confirmation is off, so signUp returned a live session — go straight in.
+  // A live session. If they picked a paid plan on the way in, send them
+  // straight to checkout rather than into the app as a free user — that
+  // drop was the broken step in the funnel.
+  if (paidPlan) {
+    const checkout = await createCheckoutSession(paidPlan);
+    if (checkout.status === "redirect") {
+      redirect(checkout.url);
+    }
+    // Checkout is unavailable (unconfigured, or the provider refused). The
+    // account exists and they're signed in, so land them in the app rather
+    // than stranding them on a dead form; they can upgrade from the
+    // pricing page later.
+    console.error(
+      "[atria] signup checkout handoff failed:",
+      checkout.status === "error" ? checkout.message : checkout.status
+    );
+  }
+
   redirect("/projects");
 }
 
 export async function signOut() {
   const supabase = await createClient();
   await supabase.auth.signOut();
-  redirect("/login");
+  // Home, not /login — signing out isn't a request to sign back in, and
+  // the marketing page is a sensible place to land.
+  redirect("/");
 }

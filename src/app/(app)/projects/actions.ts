@@ -3,9 +3,16 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { planFor, projectLimitMessage } from "@/lib/plans";
 import { buildStorageKey, PROJECT_FILES_BUCKET } from "@/lib/supabase/storage";
 
-export type ProjectActionState = { error: string | null };
+export type ProjectActionState = {
+  error: string | null;
+  // Set when the failure is a plan ceiling rather than a mistake the user
+  // can correct. Lets the dialog offer an upgrade instead of scolding, and
+  // is a typed flag rather than the UI string-matching the message.
+  atPlanLimit?: boolean;
+};
 
 const MAX_COVER_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -57,6 +64,26 @@ export async function createProject(
   } = await supabase.auth.getUser();
   if (!user) {
     return { error: "You need to sign in again." };
+  }
+
+  // Plan limit, checked server-side. The dialog also surfaces this, but
+  // the action is the only place that can actually be trusted — the client
+  // can call it directly.
+  //
+  // `plan` is read with the user's own client, so RLS confines it to their
+  // row; a missing row falls back to Free (planFor's default), which is the
+  // restrictive direction to fail in.
+  const [{ data: profile }, { count: projectCount }] = await Promise.all([
+    supabase.from("users").select("plan").eq("id", user.id).maybeSingle(),
+    supabase
+      .from("projects")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id),
+  ]);
+
+  const plan = planFor(profile?.plan);
+  if ((projectCount ?? 0) >= plan.projectLimit) {
+    return { error: projectLimitMessage(plan), atPlanLimit: true };
   }
 
   const { data: project, error: insertError } = await supabase

@@ -1,0 +1,67 @@
+import type { PlanTier } from "@/lib/plans";
+
+// Only paid tiers can be checked out. Free is a plan but never a purchase,
+// and encoding that in the type means no adapter has to defend against it.
+export type PaidPlanTier = Exclude<PlanTier, "free">;
+
+export type CheckoutOptions = {
+  // Prefills the provider's form. Optional — a provider that can't use it
+  // ignores it rather than failing.
+  email?: string;
+  // Where the provider returns the customer after a successful payment.
+  redirectUrl?: string;
+};
+
+// The contract every payment provider implements.
+//
+// Deliberately says nothing about variants, prices, sessions or webhooks —
+// those are provider vocabulary. Callers pass a plan and a user, and get
+// back a URL to send the browser to. Swapping Lemon Squeezy for Stripe or
+// Paddle means writing one new file that satisfies this interface and
+// changing the single line in ./index.ts that picks the active provider;
+// no UI or business logic moves.
+export interface PaymentProvider {
+  // For logs and error messages, so a failure names the provider that
+  // produced it without the caller importing anything provider-specific.
+  readonly name: string;
+
+  // Returns a hosted checkout URL. Throws PaymentConfigError when the
+  // provider isn't configured, and PaymentProviderError when the provider
+  // rejects the request.
+  createCheckout(
+    plan: PaidPlanTier,
+    userId: string,
+    options?: CheckoutOptions
+  ): Promise<string>;
+}
+
+// A subscription event, normalised out of whatever shape the provider
+// sends. The webhook route works with this and never sees provider JSON.
+export type SubscriptionEvent = {
+  // Which Atria user this is about, from the custom data attached at
+  // checkout.
+  userId: string;
+  // The tier they should end up on. "free" means the subscription ended,
+  // so the account drops back to the free plan.
+  tier: PlanTier;
+  customerId: string | null;
+  subscriptionId: string | null;
+};
+
+// Missing or malformed configuration — an operator problem (an unset env
+// var), not something the customer did. Kept separate so the UI can say
+// "payments aren't available right now" rather than blaming the user.
+export class PaymentConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PaymentConfigError";
+  }
+}
+
+// The provider accepted the request and refused it, or was unreachable.
+export class PaymentProviderError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PaymentProviderError";
+  }
+}

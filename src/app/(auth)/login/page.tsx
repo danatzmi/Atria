@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import { signIn, type AuthActionState } from "../actions";
+import { BackLink } from "../back-link";
 
 const initialState: AuthActionState = { error: null };
 
@@ -10,11 +11,23 @@ export default function LoginPage() {
   const [state, formAction, pending] = useActionState(signIn, initialState);
 
   return (
-    <div className="flex flex-1 items-center justify-center px-6 py-16">
+    <div className="relative flex flex-1 items-center justify-center px-6 py-16">
+      {/* Top-left corner of the page, not inside the form — mirrors where a
+          browser's Back button would sit. Inset a little further on wider
+          screens so it lines up with the page's own padding. */}
+      <div className="absolute left-2 top-4 sm:left-4 sm:top-6">
+        <BackLink />
+      </div>
+
       <div className="w-full max-w-sm">
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900">
+        {/* The wordmark links home too; the corner Back above is what a
+            standalone PWA needs, where there's no browser chrome at all. */}
+        <Link
+          href="/"
+          className="inline-block text-2xl font-semibold tracking-tight text-zinc-900 transition-colors hover:text-zinc-600"
+        >
           Atria
-        </h1>
+        </Link>
         <p className="mt-1 text-sm text-zinc-500">
           Sign in to your projects.
         </p>
