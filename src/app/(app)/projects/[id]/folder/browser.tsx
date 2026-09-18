@@ -33,6 +33,7 @@ import { MoveDialog } from "./move-dialog";
 import { DeleteItemDialog } from "./delete-item-dialog";
 import { FolderFormDialog } from "./folder-form-dialog";
 import { BlockFormDialog } from "./block-form-dialog";
+import { Dropdown } from "@/components/dropdown";
 
 // This level's own block stream — Sub-tabs no longer render inline here
 // (they live exclusively in the persistent left sidebar; see
@@ -454,85 +455,74 @@ function AddMenu({
   onUploadFiles: () => void;
   onSuccess: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const itemClassName =
     "block w-full px-3 py-2 text-left text-sm text-stone-700 transition-colors hover:bg-stone-50";
 
-  // Closing the menu the instant a trigger is clicked would unmount
-  // BlockFormDialog/FolderFormDialog before their own native <dialog> ever
-  // gets a chance to render — the menu only closes once whichever dialog
-  // actually succeeds (its own Cancel/backdrop-click close the *dialog*
-  // without touching this menu, which is a harmless, rare rough edge: it
-  // can be left open behind a since-cancelled dialog until the next click).
-  function handleSuccess() {
-    setOpen(false);
-    onSuccess();
-  }
+  // Note the items close the menu via `close()` on SUCCESS, never on click.
+  // Closing on click would unmount BlockFormDialog/FolderFormDialog before
+  // their own native <dialog> had rendered — the Dropdown deliberately
+  // leaves dismissal to the caller for exactly this reason.
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
-      >
-        + Add
-      </button>
-      {open && (
+    <Dropdown
+      label="Add to this tab"
+      align="end"
+      menuClassName="w-44"
+      trigger={(props) => (
+        <button
+          {...props}
+          type="button"
+          className="flex items-center gap-1 rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
+        >
+          + Add
+        </button>
+      )}
+    >
+      {(close) => (
         <>
-          {/* Full-screen invisible backdrop, behind the panel — the only
-              purpose is closing the menu on an outside click. */}
+          <BlockFormDialog
+            projectId={projectId}
+            sectionId={folderId}
+            mode="create"
+            kind="text"
+            dialogTitle="New text block"
+            placeholder="Write anything worth remembering about this tab…"
+            submitLabel="Add block"
+            triggerLabel="Text"
+            triggerClassName={itemClassName}
+            onSuccess={() => {
+              close();
+              onSuccess();
+            }}
+          />
           <button
             type="button"
-            aria-label="Close menu"
-            tabIndex={-1}
-            onClick={() => setOpen(false)}
-            className="fixed inset-0 z-10 cursor-default"
-          />
-          {/* right-0 at every size: the trigger now sits at the right end of
-              the header row on mobile too (the search box flexes instead of
-              taking its own line), so the menu opens leftward into the page.
-              This was briefly left-anchored below sm, back when "+ Add"
-              wrapped to the left edge — that layout is gone. */}
-          <div className="absolute right-0 z-20 mt-1 w-44 overflow-hidden rounded-lg border border-stone-200 bg-white py-1 shadow-lg">
-            <BlockFormDialog
+            onClick={() => {
+              close();
+              onUploadFiles();
+            }}
+            className={itemClassName}
+          >
+            Upload File
+          </button>
+          {!isUnsorted && (
+            <FolderFormDialog
               projectId={projectId}
-              sectionId={folderId}
-              mode="create"
-              kind="text"
-              dialogTitle="New text block"
-              placeholder="Write anything worth remembering about this tab…"
-              submitLabel="Add block"
-              triggerLabel="Text"
+              parentFolderId={folderId}
+              triggerLabel="Sub-tab"
               triggerClassName={itemClassName}
-              onSuccess={handleSuccess}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(false);
-                onUploadFiles();
+              dialogTitle="New sub-tab"
+              namePlaceholder="Hardware"
+              submitLabel="Add sub-tab"
+              onSuccess={() => {
+                close();
+                onSuccess();
               }}
-              className={itemClassName}
-            >
-              Upload File
-            </button>
-            {!isUnsorted && (
-              <FolderFormDialog
-                projectId={projectId}
-                parentFolderId={folderId}
-                triggerLabel="Sub-tab"
-                triggerClassName={itemClassName}
-                dialogTitle="New sub-tab"
-                namePlaceholder="Hardware"
-                submitLabel="Add sub-tab"
-                onSuccess={handleSuccess}
-              />
-            )}
-          </div>
+            />
+          )}
         </>
       )}
-    </div>
+    </Dropdown>
   );
 }
 

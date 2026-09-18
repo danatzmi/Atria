@@ -1,3 +1,4 @@
+import { networkInterfaces } from "node:os";
 import type { NextConfig } from "next";
 
 // Storage lives on the Supabase project's own host, so the allow-list is
@@ -31,7 +32,33 @@ const isLocalSupabase =
   /^10\./.test(hostname) ||
   /^192\.168\./.test(hostname);
 
+// Every non-internal IPv4 address this machine answers on, so a phone or
+// tablet on the same network can load the dev server.
+function localNetworkHosts(): string[] {
+  const hosts = new Set<string>();
+  for (const addresses of Object.values(networkInterfaces())) {
+    for (const address of addresses ?? []) {
+      if (address.family === "IPv4" && !address.internal) hosts.add(address.address);
+    }
+  }
+  return [...hosts];
+}
+
+const LAN_HOSTS = localNetworkHosts();
+
 const nextConfig: NextConfig = {
+  // Next 16 blocks requests for /_next/* dev assets from any origin it
+  // doesn't recognise. Reaching `next dev` from a phone on the same
+  // network — http://<lan-ip>:3000 — is exactly that case: the HTML
+  // renders, the client bundle is blocked, React never hydrates, and every
+  // button on the page is silently dead, with no error in the browser.
+  //
+  // Listed as exact hosts, computed above from this machine's own network
+  // interfaces: Next rejects broad wildcards like "10.*" on purpose (see
+  // matchWildcardDomain in its csrf-protection module), and hardcoding one
+  // address would break the next time the router hands out a different
+  // lease. Development only — `next build`/`next start` ignore this.
+  allowedDevOrigins: LAN_HOSTS,
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",

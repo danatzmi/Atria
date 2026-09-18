@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { Dropdown } from "@/components/dropdown";
 
 // Standard printer glyph — the conventional Print/Save-as-PDF affordance,
 // rather than a document icon.
@@ -33,7 +33,6 @@ const TRIGGER_CLASS =
 // only discoverable after committing to one. Asking here costs one tap and
 // removes the wrong-document round trip.
 export function ExportMenu({ projectId }: { projectId: string }) {
-  const [open, setOpen] = useState(false);
   // Read from the URL rather than taking it as a prop: tab changes now go
   // through history.pushState, which never re-renders the server page, so a
   // server-supplied prop would be stale after the first tab switch.
@@ -65,60 +64,44 @@ export function ExportMenu({ projectId }: { projectId: string }) {
     "block w-full px-3 py-2 text-left text-sm text-zinc-700 transition-colors hover:bg-zinc-50";
 
   return (
-    <div className="relative">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className={TRIGGER_CLASS}
-        aria-label="Export PDF"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        title="Export PDF"
-      >
-        <PrinterIcon className="h-4 w-4" />
-      </button>
-
-      {open && (
+    <Dropdown
+      label="Export options"
+      align="end"
+      menuClassName="w-48"
+      contentWidth={192}
+      trigger={(props) => (
+        <button {...props} type="button" className={TRIGGER_CLASS} title="Export PDF">
+          <span className="sr-only">Export PDF</span>
+          <PrinterIcon className="h-4 w-4" />
+        </button>
+      )}
+    >
+      {(close) => (
         <>
-          {/* Click-away layer, matching AddMenu's pattern in browser.tsx. */}
-          <button
-            type="button"
-            aria-hidden
-            tabIndex={-1}
-            onClick={() => setOpen(false)}
-            className="fixed inset-0 z-10 cursor-default"
-          />
-          {/* right-0: the trigger sits at the right end of the header at
-              every width, so the menu opens leftward into the page. */}
-          <div
-            role="menu"
-            className="absolute right-0 z-20 mt-1 w-48 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg"
+          <Link
+            role="menuitem"
+            href={`${base}?tab=${activeTabId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            prefetch={false}
+            onClick={close}
+            className={itemClass}
           >
-            <Link
-              role="menuitem"
-              href={`${base}?tab=${activeTabId}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              prefetch={false}
-              onClick={() => setOpen(false)}
-              className={itemClass}
-            >
-              Export current tab
-            </Link>
-            <Link
-              role="menuitem"
-              href={base}
-              target="_blank"
-              rel="noopener noreferrer"
-              prefetch={false}
-              onClick={() => setOpen(false)}
-              className={itemClass}
-            >
-              Export whole project
-            </Link>
-          </div>
+            Export current tab
+          </Link>
+          <Link
+            role="menuitem"
+            href={base}
+            target="_blank"
+            rel="noopener noreferrer"
+            prefetch={false}
+            onClick={close}
+            className={itemClass}
+          >
+            Export whole project
+          </Link>
         </>
       )}
-    </div>
+    </Dropdown>
   );
 }
