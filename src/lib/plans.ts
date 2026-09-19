@@ -41,7 +41,7 @@ export const PLANS: Plan[] = [
   {
     tier: "basic",
     name: "Basic",
-    price: "$9",
+    price: "$9.99",
     cadence: "per month",
     line: "For a working practice.",
     projectLimit: 10,
@@ -53,7 +53,7 @@ export const PLANS: Plan[] = [
   {
     tier: "pro",
     name: "Pro",
-    price: "$29",
+    price: "$29.99",
     cadence: "per month",
     line: "For a studio.",
     projectLimit: Infinity,

@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   createCheckout as lsCreateCheckout,
+  getCustomer,
   lemonSqueezySetup,
 } from "@lemonsqueezy/lemonsqueezy.js";
 import type { PlanTier } from "@/lib/plans";
@@ -96,6 +97,29 @@ export const lemonSqueezyProvider: PaymentProvider = {
     if (!url) {
       throw new PaymentProviderError(
         "Lemon Squeezy returned no checkout URL."
+      );
+    }
+    return url;
+  },
+
+  async createBillingPortalUrl(customerId: string): Promise<string> {
+    const apiKey = requireEnv("LEMON_SQUEEZY_API_KEY");
+    lemonSqueezySetup({ apiKey, onError: () => {} });
+
+    const { data, error } = await getCustomer(customerId);
+    if (error) {
+      throw new PaymentProviderError(
+        `Lemon Squeezy could not load the customer: ${error.message}`
+      );
+    }
+
+    // Pre-signed and valid for 24 hours, so it is generated per request and
+    // never stored. Null when the customer has never bought a subscription
+    // — there is nothing for them to manage yet.
+    const url = data?.data?.attributes?.urls?.customer_portal;
+    if (!url) {
+      throw new PaymentProviderError(
+        "Lemon Squeezy returned no customer portal URL for this customer."
       );
     }
     return url;

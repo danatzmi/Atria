@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { HeroAnimation } from "./hero-animation";
-import { PricingWidget } from "./pricing-widget";
+import { PricingWidget } from "@/components/pricing-widget";
 
 export default async function MarketingHome() {
   // A signed-in visitor almost certainly wants their work, not the pitch.

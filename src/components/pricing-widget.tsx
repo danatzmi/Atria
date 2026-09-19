@@ -4,19 +4,38 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { PLANS, type PlanTier } from "@/lib/plans";
-import { createCheckoutSession } from "./checkout-actions";
+import { createCheckoutSession } from "@/lib/payments/checkout-action";
 
 // The pricing section as a chooser rather than three separate offers.
 //
 // Three CTAs made the visitor pick a button; one selection plus one
 // Continue makes them pick a plan and then commit — the same shape as a
 // real checkout, and it leaves a single obvious next step on the page.
-export function PricingWidget() {
+// Shared between the marketing homepage and Settings. A signed-in user on
+// the free plan needs to upgrade from inside the app, and linking them to
+// the marketing page doesn't work — that route redirects signed-in
+// visitors straight back to /projects.
+export function PricingWidget({
+  heading = "Simple plans",
+  subheading = "Start free. Upgrade when your practice does.",
+  // Settings renders this under its own "Plan" heading, and the free tier
+  // isn't an upgrade — so that context turns both off.
+  showHeading = true,
+  includeFree = true,
+  className = "mt-24 sm:mt-32",
+}: {
+  heading?: string;
+  subheading?: string;
+  showHeading?: boolean;
+  includeFree?: boolean;
+  className?: string;
+} = {}) {
   const router = useRouter();
-  const [selected, setSelected] = useState<PlanTier>("free");
+  const plans = includeFree ? PLANS : PLANS.filter((p) => p.tier !== "free");
+  const [selected, setSelected] = useState<PlanTier>(plans[0].tier);
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const plan = PLANS.find((p) => p.tier === selected) ?? PLANS[0];
+  const plan = plans.find((p) => p.tier === selected) ?? plans[0];
 
   // Free needs no payment, so it stays a plain link to signup. Paid plans
   // go through the server action, which decides between checkout and
@@ -45,21 +64,27 @@ export function PricingWidget() {
   }
 
   return (
-    <section id="pricing" className="mt-24 scroll-mt-8 sm:mt-32">
-      <div className="text-center">
-        <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">
-          Simple plans
-        </h2>
-        <p className="mt-3 text-base text-zinc-500">
-          Start free. Upgrade when your practice does.
-        </p>
-      </div>
+    <section id="pricing" className={`scroll-mt-8 ${className}`}>
+      {showHeading && (
+        <div className="text-center">
+          <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl">
+            {heading}
+          </h2>
+          <p className="mt-3 text-base text-zinc-500">{subheading}</p>
+        </div>
+      )}
 
       {/* radiogroup, not a list of buttons: these are mutually exclusive
           choices, so arrow-key semantics and the announced selected state
           come for free. */}
-      <div role="radiogroup" aria-label="Choose a plan" className="mt-12 grid gap-6 md:grid-cols-3">
-        {PLANS.map((p) => {
+      <div
+        role="radiogroup"
+        aria-label="Choose a plan"
+        className={`grid gap-6 ${showHeading ? "mt-12" : "mt-4"} ${
+          plans.length === 3 ? "md:grid-cols-3" : "sm:grid-cols-2"
+        }`}
+      >
+        {plans.map((p) => {
           const isSelected = p.tier === selected;
           return (
             <button

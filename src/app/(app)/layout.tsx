@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { signOut } from "../(auth)/actions";
+import { UserMenu } from "./user-menu";
 
 export default async function AppLayout({
   children,
@@ -17,6 +17,14 @@ export default async function AppLayout({
   if (!user) {
     redirect("/login");
   }
+
+  // Just the display name for the avatar/menu; the rest of the profile is
+  // Settings' concern.
+  const { data: profile } = await supabase
+    .from("users")
+    .select("name")
+    .eq("id", user.id)
+    .maybeSingle();
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -33,14 +41,7 @@ export default async function AppLayout({
         >
           Atria
         </Link>
-        <form action={signOut}>
-          <button
-            type="submit"
-            className="text-sm text-zinc-400 transition-colors hover:text-white"
-          >
-            Sign out
-          </button>
-        </form>
+        <UserMenu name={profile?.name ?? null} email={user.email ?? null} />
       </header>
       <main className="flex flex-1 flex-col">{children}</main>
     </div>

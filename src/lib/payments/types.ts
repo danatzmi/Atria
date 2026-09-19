@@ -33,6 +33,18 @@ export interface PaymentProvider {
     userId: string,
     options?: CheckoutOptions
   ): Promise<string>;
+
+  // A URL where the customer manages their own subscription — changing
+  // card, upgrading, downgrading, cancelling, downloading invoices.
+  //
+  // Deliberately the provider's own hosted portal rather than screens in
+  // Atria: prorating, dunning, tax and invoice PDFs are a large, regulated
+  // surface that every processor already solves, and rebuilding it would
+  // be the single biggest source of billing bugs in the app.
+  //
+  // `customerId` is the provider's own id, stored on the user when their
+  // first subscription webhook arrives.
+  createBillingPortalUrl(customerId: string): Promise<string>;
 }
 
 // A subscription event, normalised out of whatever shape the provider

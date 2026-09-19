@@ -2,7 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createCheckoutSession } from "@/app/(marketing)/checkout-actions";
+import { createCheckoutSession } from "@/lib/payments/checkout-action";
 import type { PaidPlanTier } from "@/lib/payments";
 
 export type AuthActionState = {
