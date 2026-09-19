@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { planFor } from "@/lib/plans";
+import { SUPPORT_EMAIL } from "@/lib/site";
 import { ChevronLeftIcon } from "../projects/[id]/folder/item-icon";
 import { NameForm } from "./name-form";
 import { ManageBillingButton } from "./manage-billing-button";
@@ -133,6 +134,28 @@ export default async function SettingsPage() {
           <DeleteAccountDialog />
         </div>
       </section>
+
+      {/* Deliberately after the danger zone: someone who came here to
+          cancel or delete should see a way to ask a human first. */}
+      <footer className="mt-12 border-t border-zinc-100 pt-6">
+        <p className="text-sm text-zinc-500">
+          Need help?{" "}
+          <a
+            href={`mailto:${SUPPORT_EMAIL}`}
+            className="font-medium text-zinc-700 underline underline-offset-2 transition-colors hover:text-zinc-900"
+          >
+            Contact support
+          </a>
+        </p>
+        <p className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-400">
+          <Link href="/terms" className="transition-colors hover:text-zinc-600">
+            Terms of Service
+          </Link>
+          <Link href="/privacy" className="transition-colors hover:text-zinc-600">
+            Privacy Policy
+          </Link>
+        </p>
+      </footer>
     </div>
   );
 }

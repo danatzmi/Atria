@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { HeroAnimation } from "./hero-animation";
 import { PricingWidget } from "@/components/pricing-widget";
+import { SiteFooter } from "./legal-page";
 
 export default async function MarketingHome() {
   // A signed-in visitor almost certainly wants their work, not the pitch.
@@ -59,11 +60,9 @@ export default async function MarketingHome() {
 
       </main>
 
-      <footer className="mx-auto mt-24 w-full max-w-6xl px-6 py-10 sm:mt-32">
-        <p className="border-t border-zinc-100 pt-8 text-sm text-zinc-400">
-          Atria — a beautiful digital binder for real-world projects.
-        </p>
-      </footer>
+      <div className="mt-24 sm:mt-32">
+        <SiteFooter />
+      </div>
     </div>
   );
 }
