@@ -75,6 +75,23 @@ export function ProjectSidebar({
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }) {
+  // Lock the page behind the drawer while it's open.
+  //
+  // Two reasons, both real on a phone. It's standard modal behaviour — the
+  // list underneath shouldn't scroll away beneath your thumb. And it stops
+  // the background scrolling that makes iOS collapse or expand its address
+  // bar mid-interaction, which shifts the visual viewport out from under a
+  // `position: fixed` drawer and leaves taps landing a toolbar's height
+  // from where they look like they should.
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [mobileOpen]);
+
   const [draggingFolderId, setDraggingFolderId] = useState<string | null>(null);
   const [dragOverZoneKey, setDragOverZoneKey] = useState<string | null>(null);
   const [dragOverRowId, setDragOverRowId] = useState<string | null>(null);

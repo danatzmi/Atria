@@ -8,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createPortal } from "react-dom";
 
 // A dropdown that positions itself from measurement rather than from
 // hardcoded alignment classes.
@@ -63,6 +64,10 @@ export function Dropdown({
 }) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<{ left: number; top: number } | null>(null);
+  // document.body doesn't exist during SSR, so the portal waits for the
+  // client. A ref read during render rather than state set in an effect —
+  // the latter cascades a render and trips react-hooks/set-state-in-effect.
+  const mounted = typeof document !== "undefined";
 
   // Clearing coords alongside open keeps the next opening from painting a
   // frame at the previous trigger's position.
@@ -80,8 +85,22 @@ export function Dropdown({
     const menu = menuRef.current;
     const width = menu?.offsetWidth || contentWidth;
     const height = menu?.offsetHeight || 0;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+
+    // The VISUAL viewport, not window.innerWidth/Height.
+    //
+    // On mobile the two diverge: the dynamic address bar, and pinch-zoom,
+    // shift what the user actually sees relative to the layout viewport. A
+    // fixed element placed from layout coordinates then paints in the
+    // wrong place — the toolbar's height is roughly the offset people
+    // report as "the tap target is ~45px off".
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    const vw = vv?.width ?? window.innerWidth;
+    const vh = vv?.height ?? window.innerHeight;
+    // getBoundingClientRect is in layout-viewport coordinates, so anything
+    // derived from it has to be shifted into the visual viewport before
+    // being used as a `fixed` offset.
+    const offsetX = vv?.offsetLeft ?? 0;
+    const offsetY = vv?.offsetTop ?? 0;
 
     // Horizontal: try the preferred side, flip if it would clip, then clamp
     // so a menu wider than the space on either side still lands on screen
@@ -103,7 +122,7 @@ export function Dropdown({
       top = above >= VIEWPORT_MARGIN ? above : Math.max(VIEWPORT_MARGIN, vh - height - VIEWPORT_MARGIN);
     }
 
-    setCoords({ left: Math.round(left), top: Math.round(top) });
+    setCoords({ left: Math.round(left + offsetX), top: Math.round(top + offsetY) });
   }, [align, contentWidth]);
 
   // Measure before paint, so the menu never flashes at the wrong place.
@@ -126,9 +145,18 @@ export function Dropdown({
     const update = () => position();
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, { capture: true, passive: true });
+    // The visual viewport moves on its own — address bar collapsing, pinch
+    // zoom, the on-screen keyboard — without firing a window scroll or
+    // resize. Without these two the menu silently drifts out of alignment
+    // with its trigger on a phone.
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", update);
+    vv?.addEventListener("scroll", update);
     return () => {
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, { capture: true });
+      vv?.removeEventListener("resize", update);
+      vv?.removeEventListener("scroll", update);
     };
   }, [open, position]);
 
@@ -163,9 +191,11 @@ export function Dropdown({
         "aria-expanded": open,
       })}
 
-      {open && (
-        <div
-          ref={menuRef}
+      {open &&
+        mounted &&
+        createPortal(
+          <div
+            ref={menuRef}
           role="menu"
           aria-label={label}
           // invisible until measured — one frame at the wrong coordinates
@@ -175,11 +205,19 @@ export function Dropdown({
             top: coords?.top ?? 0,
             visibility: coords ? "visible" : "hidden",
           }}
-          className={`fixed z-50 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg ${menuClassName}`}
-        >
-          {typeof children === "function" ? children(closeMenu) : children}
-        </div>
-      )}
+            className={`fixed z-50 overflow-hidden rounded-lg border border-zinc-200 bg-white py-1 shadow-lg ${menuClassName}`}
+          >
+            {typeof children === "function" ? children(closeMenu) : children}
+          </div>,
+          // Portalled to <body>. `position: fixed` resolves against the
+          // nearest ancestor with a transform/translate/filter rather than
+          // the viewport — and Tailwind v4 emits `translate` as a standalone
+          // property, so something as ordinary as the sidebar's
+          // `translate-x-0` silently turns it into the containing block.
+          // Escaping to <body> makes the coordinates mean what they say
+          // wherever a Dropdown is used.
+          document.body
+        )}
     </>
   );
 }
