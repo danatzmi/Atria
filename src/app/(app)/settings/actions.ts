@@ -40,7 +40,9 @@ export async function updateName(
     return { error: error.message };
   }
 
-  revalidatePath("/settings");
+  // The section page, not /settings — that route is only a redirect now,
+  // so revalidating it would leave the stale name on screen.
+  revalidatePath("/settings/profile");
   return { error: null, saved: true };
 }
 

@@ -46,6 +46,9 @@ export function UserMenu({ name, email }: { name: string | null; email: string |
             <p className="truncate text-xs text-zinc-500">{email}</p>
           </div>
 
+          {/* One entry point. /settings redirects to /settings/profile,
+              and the settings page has its own section nav — duplicating
+              those sections here would mean two places to keep in step. */}
           <Link href="/settings" onClick={close} className={item}>
             <GearIcon className="h-4 w-4 shrink-0 text-zinc-400" />
             Settings
