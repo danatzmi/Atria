@@ -29,6 +29,28 @@ const SIGNED_URL_TTL_SECONDS = 60 * 60 * 2;
 // served after it has expired.
 const SIGNED_URL_CACHE_SECONDS = 60 * 30;
 
+// How often the cache KEY rotates — the part that actually bounds how old a
+// URL can be when it is handed out.
+//
+// `revalidate` alone could not do that. Next's data cache is
+// stale-while-revalidate: once an entry is older than `revalidate` it is not
+// discarded, it is SERVED and refreshed in the background. So a page nobody
+// had opened for three hours would hand its first visitor a URL minted three
+// hours ago — past the 2h TTL, and a broken image — while quietly fetching a
+// good one for the next person. Intermittent by construction, and invisible
+// to whoever reloaded and saw it work.
+//
+// Putting the current bucket in the key removes the possibility instead of
+// shortening the window: a new bucket has no entry at all, so the first
+// request of each bucket is a genuine miss and blocks for a fresh URL.
+//
+// Derived from the TTL rather than written as a literal hour, because the
+// invariant is a relationship, not a number: an entry minted at the start of
+// a bucket is still served at the end of it, so the oldest URL ever handed
+// out is one bucket old and must still be valid then. Halving the TTL keeps
+// that true with a wide margin, and keeps it true if the TTL ever changes.
+const SIGNED_URL_BUCKET_SECONDS = SIGNED_URL_TTL_SECONDS / 2;
+
 // Cache keys are the storage keys themselves, which is safe because a key is
 // owner-scoped by construction ({user_id}/{project_id}/...) — see
 // buildStorageKey. Two users can never request the same key, so a cached URL
@@ -41,7 +63,16 @@ async function signBatch(
     .from(PROJECT_FILES_BUCKET)
     .createSignedUrls(storageKeys, SIGNED_URL_TTL_SECONDS);
 
-  if (error || !data) return [];
+  // Throwing rather than returning [] matters more than it looks: the caller
+  // wraps this in unstable_cache, and a returned value is a value worth
+  // caching. A transient network blip would be frozen in as "this project has
+  // no images" for the life of the entry. A throw is not cached.
+  if (error) {
+    throw new Error(`Failed to sign URLs: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("Failed to sign URLs: storage returned no data");
+  }
   return data
     .filter((entry) => !entry.error && entry.signedUrl)
     .map((entry) => [entry.path ?? "", entry.signedUrl as string]);
@@ -84,9 +115,24 @@ export async function createSignedUrls(
   // Sorted so the same set of keys produces one cache entry regardless of
   // the order they arrive in.
   const cacheKey = [...storageKeys].sort();
+
+  // See SIGNED_URL_BUCKET_SECONDS: this is what guarantees a URL is never
+  // served after it has expired, whatever the data cache decides to do with
+  // stale entries.
+  const timeBucket = Math.floor(
+    Date.now() / (SIGNED_URL_BUCKET_SECONDS * 1000)
+  ).toString();
+
   const entries = await unstable_cache(
     () => signBatch(supabase, storageKeys),
-    ["signed-urls", ...cacheKey],
+    ["signed-urls", timeBucket, ...cacheKey],
+    // Kept, though the bucket is what fixes the bug. Omitting it means
+    // "cache indefinitely" (see the unstable_cache docs), and with a key
+    // that rotates hourly every past bucket would then be retained forever —
+    // a slow leak of dead entries. This lets them age out. It cannot
+    // reintroduce the staleness it failed to prevent before: an entry can
+    // now only be served inside its own bucket, so the worst case is one
+    // bucket old, which is half the TTL.
     { revalidate: SIGNED_URL_CACHE_SECONDS }
   )();
 
