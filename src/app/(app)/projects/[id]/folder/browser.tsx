@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  Fragment,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  useTransition,
-  type ReactNode,
-} from "react";
+import { Fragment, createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState, useTransition } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
@@ -19,6 +11,23 @@ import {
 } from "@/lib/supabase/storage";
 import { formatBytes, getFormatLabel, isPdfFile } from "@/lib/files";
 import { renderBlockContent, tryParseDocJSON } from "@/lib/doc-content";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { midpointSortOrder } from "@/lib/sort-order";
 import type { BlockRow, FileRow, FolderRow } from "./data";
 import {
@@ -27,7 +36,7 @@ import {
   getTabContents,
   moveBlockToPosition,
 } from "./actions";
-import { ChevronIcon, DocumentIcon, PlayIcon, UploadIcon } from "./item-icon";
+import { DocumentIcon, PlayIcon, UploadIcon } from "./item-icon";
 import { RenameDialog } from "./rename-dialog";
 import { MoveDialog } from "./move-dialog";
 import { DeleteItemDialog } from "./delete-item-dialog";
@@ -36,6 +45,18 @@ import { BlockFormDialog } from "./block-form-dialog";
 import { Dropdown } from "@/components/dropdown";
 import { Tooltip } from "@/components/tooltip";
 import { scrollToBlock } from "./scroll-to-block";
+
+// View Mode vs Edit Mode.
+//
+// A context rather than a prop threaded through five components: every
+// block type's action cluster needs it, they are leaves several levels
+// down, and none of them pass anything else to each other. Defaulting to
+// false means anything rendered outside the provider is read-only, which
+// is the safe direction for a flag that reveals delete buttons.
+const EditModeContext = createContext(false);
+function useEditMode() {
+  return useContext(EditModeContext);
+}
 
 // This level's own block stream — Sub-tabs no longer render inline here
 // (they live exclusively in the persistent left sidebar; see
@@ -65,15 +86,6 @@ function buildStream(blocks: BlockRow[]): StreamItem[] {
     i++;
   }
   return items;
-}
-
-function firstSortOrder(item: StreamItem): number {
-  if (item.kind === "block") return item.block.sort_order;
-  return item.blocks[0].sort_order;
-}
-function lastSortOrder(item: StreamItem): number {
-  if (item.kind === "block") return item.block.sort_order;
-  return item.blocks[item.blocks.length - 1].sort_order;
 }
 function streamKey(item: StreamItem): string {
   if (item.kind === "block") return item.block.id;
@@ -152,11 +164,28 @@ export function FolderBrowser({
 
   const [queue, setQueue] = useState<UploadItem[]>([]);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
+  const [editing, setEditing] = useState(false);
+
+  // The order shown immediately after a drop, before the server round-trip
+  // and refetch land. Without it the card snaps back to its old slot for as
+  // long as the request takes, which reads as the drag having failed.
+  const [pendingOrder, setPendingOrder] = useState<BlockRow[] | null>(null);
+
+  const sensors = useSensors(
+    // A small threshold so a click on the grip is still a click, and — more
+    // importantly on touch — so the gesture has to commit to a drag before
+    // it steals the scroll. The listeners live on the grip alone, so the
+    // rest of the card scrolls normally under a finger either way.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   const fetchSelf = useCallback(() => {
     startTransition(async () => {
       const result = await getTabContents(projectId, folderId);
       setData(result);
+      // Server order is now authoritative again.
+      setPendingOrder(null);
     });
   }, [projectId, folderId]);
 
@@ -169,13 +198,10 @@ export function FolderBrowser({
     onItemsChanged?.();
   }
 
-  const blocks = useMemo(() => data?.blocks ?? [], [data]);
+  const serverBlocks = useMemo(() => data?.blocks ?? [], [data]);
+  const blocks = pendingOrder ?? serverBlocks;
   const previewUrls = data?.previewUrls ?? {};
 
-  // Searching is global now (the header's ProjectSearch), so this list is
-  // always the tab's real contents in their real order — nothing to filter,
-  // and reordering is always available.
-  const canReorder = true;
   const items = useMemo(() => buildStream(blocks), [blocks]);
 
   const isEmpty = blocks.length === 0;
@@ -256,35 +282,39 @@ export function FolderBrowser({
     pickFiles((files) => uploadFiles(files, sortOrder));
   }
 
-  // Touch fallback for reordering. HTML5 drag-and-drop is unreliable on
-  // iOS/Android and fights the scroll gesture, so on mobile each item also
-  // gets Up/Down controls. Moves a whole stream item, so a run of photos
-  // rendered as one grid travels together rather than breaking apart:
-  // every block in the run is rewritten to consecutive fractional positions
-  // in the gap on the far side of the neighbor being stepped over.
-  async function moveStreamItem(index: number, direction: -1 | 1) {
-    if (!items[index + direction]) return;
+  // Reordering is drag-only now, and only in Edit Mode.
+  //
+  // The list being dragged is the raw `blocks` array — not buildStream's
+  // grouping. That matters: a photo grid is a run of consecutive image
+  // blocks collapsed into one row, so dragging inside it would change what
+  // the groups are while the pointer is still down, moving targets out from
+  // under dnd-kit mid-gesture. A flat one-per-row list has a fixed number
+  // of stable items for the whole drag, and the grouping is re-derived
+  // afterwards.
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
 
-    const moving = items[index];
-    const movingBlocks = moving.kind === "block" ? [moving.block] : moving.blocks;
+    const oldIndex = blocks.findIndex((b) => b.id === active.id);
+    const newIndex = blocks.findIndex((b) => b.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
 
-    // The gap the item is landing in — beyond the neighbor it steps over.
-    let low: number | undefined;
-    let high: number | undefined;
-    if (direction === -1) {
-      low = items[index - 2] ? lastSortOrder(items[index - 2]) : undefined;
-      high = firstSortOrder(items[index - 1]);
-    } else {
-      low = lastSortOrder(items[index + 1]);
-      high = items[index + 2] ? firstSortOrder(items[index + 2]) : undefined;
-    }
+    const reordered = arrayMove(blocks, oldIndex, newIndex);
+    setPendingOrder(reordered);
 
-    for (const block of movingBlocks) {
-      const target = midpointSortOrder(low, high);
-      await moveBlockToPosition(block.id, projectId, target);
-      // Next block in the run goes after the one just placed, keeping the
-      // run's internal order intact.
-      low = target;
+    // Its neighbours in the *new* order still carry their original
+    // sort_orders, so the midpoint between them is the slot it just landed
+    // in — the same fractional-insert rule the old Up/Down used, and no
+    // rewrite of any other row.
+    const prev = reordered[newIndex - 1];
+    const next = reordered[newIndex + 1];
+    const target = midpointSortOrder(prev?.sort_order, next?.sort_order);
+
+    const { error } = await moveBlockToPosition(String(active.id), projectId, target);
+    if (error) {
+      // Put it back rather than leaving the screen disagreeing with the
+      // database about where things are.
+      setPendingOrder(null);
     }
     refresh();
   }
@@ -319,6 +349,20 @@ export function FolderBrowser({
         </div>
         <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
           <>
+            {/* Only worth showing once there is something to rearrange. */}
+            {blocks.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setEditing((v) => !v)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  editing
+                    ? "bg-stone-900 text-white hover:bg-stone-800"
+                    : "border border-stone-300 text-stone-600 hover:bg-stone-50"
+                }`}
+              >
+                {editing ? "Done" : "Edit"}
+              </button>
+            )}
             <AddMenu
               projectId={projectId}
               folderId={folderId}
@@ -365,39 +409,61 @@ export function FolderBrowser({
             </div>
           </div>
       ) : (
-        // A plain top-to-bottom pile. New content is appended by "+ Add" in
-        // the header; existing content is rearranged with each card's own
-        // Up/Down controls. There is no insert-between affordance and no
-        // drag-reordering — see MoveItemButtons for why.
-        <div className="mt-6 space-y-4">
-          {items.map((item, i) => (
-            <Fragment key={streamKey(item)}>
-              {canReorder && items.length > 1 && (
-                <MoveItemButtons
-                  canMoveUp={i > 0}
-                  canMoveDown={i < items.length - 1}
-                  onMoveUp={() => moveStreamItem(i, -1)}
-                  onMoveDown={() => moveStreamItem(i, 1)}
-                />
-              )}
-              {item.kind === "block" ? (
-                <BlockItem
-                  projectId={projectId}
-                  block={item.block}
-                  previewUrl={item.block.file ? previewUrls[item.block.file.storage_key] : undefined}
-                  onChanged={refresh}
-                />
-              ) : (
-                <PhotoGrid
-                  projectId={projectId}
-                  blocks={item.blocks}
-                  imageUrls={previewUrls}
-                  onChanged={refresh}
-                />
-              )}
-            </Fragment>
-          ))}
-        </div>
+        <EditModeContext.Provider value={editing}>
+          {editing ? (
+            // EDIT MODE — the raw block list, one per row, drag to reorder.
+            // Photo runs are deliberately not grouped here; see
+            // handleDragEnd for why a stable item count matters mid-drag.
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={blocks.map((b) => b.id)}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="mt-6 space-y-3">
+                  {blocks.map((block) => (
+                    <SortableBlock key={block.id} id={block.id}>
+                      <BlockItem
+                        projectId={projectId}
+                        block={block}
+                        previewUrl={block.file ? previewUrls[block.file.storage_key] : undefined}
+                        onChanged={refresh}
+                      />
+                    </SortableBlock>
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          ) : (
+            // VIEW MODE — the presentation canvas: photo runs flow as
+            // grids, and nothing on a card is clickable except the file
+            // itself. Every action lives behind the Edit toggle.
+            <div className="mt-6 space-y-4">
+              {items.map((item) => (
+                <Fragment key={streamKey(item)}>
+                  {item.kind === "block" ? (
+                    <BlockItem
+                      projectId={projectId}
+                      block={item.block}
+                      previewUrl={item.block.file ? previewUrls[item.block.file.storage_key] : undefined}
+                      onChanged={refresh}
+                    />
+                  ) : (
+                    <PhotoGrid
+                      projectId={projectId}
+                      blocks={item.blocks}
+                      imageUrls={previewUrls}
+                      onChanged={refresh}
+                    />
+                  )}
+                </Fragment>
+              ))}
+            </div>
+          )}
+        </EditModeContext.Provider>
       )}
 
       {isLoading && (
@@ -540,56 +606,6 @@ function AddMenu({
   );
 }
 
-// The only way to reorder, on every viewport. Native HTML5 drag used to do
-// this on desktop via a drop strip between cards, but that strip was also
-// the insert-between affordance this product deliberately dropped, and
-// cards can't safely become drop targets themselves — a card that listens
-// for its own dragover aborts the drag in Chrome/Safari. Explicit Up/Down
-// is dull, reliable, works identically under a finger and a mouse, and
-// suits a "pile of things you nudge into order" far better than a block
-// editor's drag choreography.
-function MoveItemButtons({
-  canMoveUp,
-  canMoveDown,
-  onMoveUp,
-  onMoveDown,
-}: {
-  canMoveUp: boolean;
-  canMoveDown: boolean;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-}) {
-  const base =
-    "flex h-8 w-8 items-center justify-center rounded-md border border-stone-200 bg-white text-stone-500 shadow-sm transition-colors disabled:opacity-30";
-
-  return (
-    <div className="mb-1 flex justify-end gap-1">
-      <Tooltip label="Move up">
-        <button
-          type="button"
-          onClick={onMoveUp}
-          disabled={!canMoveUp}
-          aria-label="Move up"
-          className={base}
-        >
-          <ChevronIcon className="h-4 w-4 -rotate-90" />
-        </button>
-      </Tooltip>
-      <Tooltip label="Move down">
-        <button
-          type="button"
-          onClick={onMoveDown}
-          disabled={!canMoveDown}
-          aria-label="Move down"
-          className={base}
-        >
-          <ChevronIcon className="h-4 w-4 rotate-90" />
-        </button>
-      </Tooltip>
-    </div>
-  );
-}
-
 // Created on demand rather than kept as a persistent ref (there can be any
 // number of upload triggers, one per insert-bar gap) — attached to the DOM
 // so the native picker behaves reliably, then removed once the browser
@@ -608,6 +624,59 @@ function pickFiles(onFiles: (files: FileList) => void) {
     once: true,
   });
   input.click();
+}
+
+// One row in Edit Mode: a grip on the left, the block's normal card on the
+// right. The drag listeners are on the grip alone — put them on the whole
+// row and every tap on a photo or a Delete button starts a drag instead.
+function SortableBlock({ id, children }: { id: string; children: ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        // x is zeroed so a row can only travel vertically. The list is one
+        // column, so sideways drift is never meaningful — it just makes the
+        // card look like it came loose.
+        transform: CSS.Transform.toString(
+          transform ? { ...transform, x: 0, scaleX: 1, scaleY: 1 } : null
+        ),
+        transition,
+      }}
+      className={`flex items-start gap-2 ${
+        isDragging ? "relative z-10 opacity-60" : ""
+      }`}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        aria-label="Drag to reorder"
+        // touch-none is required, not cosmetic: without it the browser
+        // claims the gesture for scrolling and the drag never starts under
+        // a finger.
+        className="mt-1 flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-stone-300 transition-colors hover:bg-stone-100 hover:text-stone-600 active:cursor-grabbing"
+      >
+        <GripVerticalIcon className="h-4 w-4" />
+      </button>
+      <div className="min-w-0 flex-1">{children}</div>
+    </div>
+  );
+}
+
+function GripVerticalIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 20 20" fill="currentColor" className={className}>
+      <circle cx="7.5" cy="4.5" r="1.5" />
+      <circle cx="12.5" cy="4.5" r="1.5" />
+      <circle cx="7.5" cy="10" r="1.5" />
+      <circle cx="12.5" cy="10" r="1.5" />
+      <circle cx="7.5" cy="15.5" r="1.5" />
+      <circle cx="12.5" cy="15.5" r="1.5" />
+    </svg>
+  );
 }
 
 function BlockItem({
@@ -674,6 +743,7 @@ function TextBlockRow({
   block: BlockRow;
   onChanged: () => void;
 }) {
+  const editing = useEditMode();
   return (
     <div id={block.id} className="group flex items-start">
       {/* The card body IS the drag source — there's no separate grip.
@@ -699,35 +769,36 @@ function TextBlockRow({
         >
           {renderBlockContent(block.content)}
         </div>
-        {/* draggable={false} so a press on Edit/Delete never starts the
-            card's drag instead of the click, and cursor-pointer so they
-            don't inherit the card's grab cursor. */}
-        <div
-          draggable={false}
-          className="absolute right-3 top-3 flex cursor-pointer gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover:opacity-100"
-        >
-          <BlockFormDialog
-            projectId={projectId}
-            mode="edit"
-            kind="text"
-            blockId={block.id}
-            initialContent={block.content ?? ""}
-            dialogTitle="Edit text block"
-            submitLabel="Save"
-            triggerLabel="Edit"
-            triggerClassName="cursor-pointer rounded-md bg-white/90 px-2 py-1 text-xs font-medium text-stone-600 shadow-sm backdrop-blur-sm transition-colors hover:bg-white"
-            onSuccess={onChanged}
-          />
-          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-            <DeleteItemDialog
-              kind="block"
-              itemId={block.id}
+        {/* Edit Mode only. In View Mode the card is presentation — there
+            is nothing on it to press, and no hover state to discover. */}
+        {editing && (
+          <div
+            draggable={false}
+            className="absolute right-3 top-3 flex cursor-pointer gap-1"
+          >
+            <BlockFormDialog
               projectId={projectId}
-              itemName="text block"
+              mode="edit"
+              kind="text"
+              blockId={block.id}
+              initialContent={block.content ?? ""}
+              dialogTitle="Edit text block"
+              submitLabel="Save"
+              triggerLabel="Edit"
+              triggerClassName="cursor-pointer rounded-md bg-white/90 px-2 py-1 text-xs font-medium text-stone-600 shadow-sm backdrop-blur-sm transition-colors hover:bg-white"
               onSuccess={onChanged}
             />
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <DeleteItemDialog
+                kind="block"
+                itemId={block.id}
+                projectId={projectId}
+                itemName="text block"
+                onSuccess={onChanged}
+              />
+            </div>
           </div>
-        </div>
+        )}
         
       </div>
     </div>
@@ -795,6 +866,7 @@ function PhotoCardBody({
   blockId: string;
   onChanged: () => void;
 }) {
+  const editing = useEditMode();
   return (
     <>
       <div className="group/photo relative">
@@ -820,36 +892,40 @@ function PhotoCardBody({
             )}
           </div>
         </FileOpenButton>
-        <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/photo:opacity-100">
-          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-            <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
+        {editing && (
+          <div className="absolute right-2 top-2 flex gap-1">
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
+            </div>
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+            </div>
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+            </div>
           </div>
-          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-            <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-          </div>
-          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-            <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-          </div>
-        </div>
+        )}
         
       </div>
       <div className="mt-1.5 flex items-center justify-between gap-2 px-0.5">
         <p className="min-w-0 flex-1 truncate text-xs italic text-stone-500">
           {caption || <span className="text-stone-300">No caption</span>}
         </p>
-        <BlockFormDialog
-          projectId={projectId}
-          mode="edit"
-          kind="caption"
-          blockId={blockId}
-          initialContent={caption ?? ""}
-          dialogTitle="Edit caption"
-          placeholder="Add a caption"
-          submitLabel="Save"
-          triggerLabel={caption ? "Edit" : "+ Caption"}
-          triggerClassName="shrink-0 text-xs font-medium text-stone-400 transition-colors hover:text-stone-700"
-          onSuccess={onChanged}
-        />
+        {editing && (
+          <BlockFormDialog
+            projectId={projectId}
+            mode="edit"
+            kind="caption"
+            blockId={blockId}
+            initialContent={caption ?? ""}
+            dialogTitle="Edit caption"
+            placeholder="Add a caption"
+            submitLabel="Save"
+            triggerLabel={caption ? "Edit" : "+ Caption"}
+            triggerClassName="shrink-0 text-xs font-medium text-stone-400 transition-colors hover:text-stone-700"
+            onSuccess={onChanged}
+          />
+        )}
         
       </div>
     </>
@@ -857,9 +933,9 @@ function PhotoCardBody({
 }
 
 // A run of 2+ consecutive Photo blocks — flows side-by-side as a gallery
-// grid instead of one-per-row. The whole run moves as a single unit via the
-// stream's Up/Down controls; there's no reordering *within* a run, which is
-// the one capability the drag removal gave up.
+// grid instead of one-per-row. View Mode only: Edit Mode renders the raw
+// block list one-per-row instead, so a photo is reordered there like
+// anything else and the grouping is re-derived when Edit Mode closes.
 function PhotoGrid({
   projectId,
   blocks,
@@ -927,6 +1003,7 @@ function VideoBlockRow({
   previewUrl?: string;
   onChanged: () => void;
 }) {
+  const editing = useEditMode();
   const file = block.file;
   if (!file) return null;
 
@@ -975,17 +1052,19 @@ function VideoBlockRow({
             <p className="text-xs text-stone-400">{formatBytes(file.size_bytes)}</p>
           </div>
         </FileOpenButton>
-        <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/video:opacity-100">
-          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-            <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
+        {editing && (
+          <div className="absolute right-2 top-2 flex gap-1">
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
+            </div>
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+            </div>
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+            </div>
           </div>
-          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-            <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-          </div>
-          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-            <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-          </div>
-        </div>
+        )}
         
       </div>
     </div>
@@ -1011,6 +1090,7 @@ function DocumentBlockRow({
   previewUrl?: string;
   onChanged: () => void;
 }) {
+  const editing = useEditMode();
   const file = block.file;
   const [opening, setOpening] = useState(false);
   if (!file) return null;
@@ -1100,21 +1180,23 @@ function DocumentBlockRow({
           <p className="mt-0.5 text-xs text-stone-400">{formatBytes(file.size_bytes)}</p>
         </div>
 
-        <div
-          draggable={false}
-          onClick={(e) => e.stopPropagation()}
-          className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity max-md:opacity-100 group-hover/file:opacity-100"
-        >
-          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-            <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
+        {editing && (
+          <div
+            draggable={false}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-2 top-2 flex gap-1"
+          >
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <RenameDialog kind="file" itemId={file.id} projectId={projectId} currentName={file.name} onSuccess={onChanged} />
+            </div>
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+            </div>
+            <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+              <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
+            </div>
           </div>
-          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-            <MoveDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-          </div>
-          <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-            <DeleteItemDialog kind="file" itemId={file.id} projectId={projectId} itemName={file.name} onSuccess={onChanged} />
-          </div>
-        </div>
+        )}
         
       </div>
     </div>
