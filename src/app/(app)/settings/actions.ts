@@ -65,11 +65,14 @@ export async function openBillingPortal(): Promise<PortalState> {
 
   const { data: profile } = await supabase
     .from("users")
-    .select("stripe_customer_id")
+    .select("stripe_customer_id, stripe_subscription_id")
     .eq("id", user.id)
     .maybeSingle();
 
   const customerId = profile?.stripe_customer_id;
+  // Lemon Squeezy's usable portal link hangs off the subscription rather
+  // than the customer; see createBillingPortalUrl for why.
+  const subscriptionId = profile?.stripe_subscription_id ?? null;
   // No customer record means they have never subscribed, so the provider
   // has no portal to show them.
   if (!customerId) {
@@ -80,7 +83,10 @@ export async function openBillingPortal(): Promise<PortalState> {
   }
 
   try {
-    const url = await paymentProvider.createBillingPortalUrl(customerId);
+    const url = await paymentProvider.createBillingPortalUrl(
+      customerId,
+      subscriptionId
+    );
     return { status: "redirect", url };
   } catch (error) {
     if (error instanceof PaymentConfigError) {

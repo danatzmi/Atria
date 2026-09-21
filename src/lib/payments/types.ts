@@ -42,9 +42,19 @@ export interface PaymentProvider {
   // surface that every processor already solves, and rebuilding it would
   // be the single biggest source of billing bugs in the app.
   //
+  // Both ids are passed because providers disagree about which one owns
+  // the portal. Stripe's portal session is created from the customer;
+  // Lemon Squeezy's usable portal link hangs off the subscription. An
+  // adapter uses whichever it needs and ignores the other, which is
+  // cheaper than making every caller know the difference.
+  //
   // `customerId` is the provider's own id, stored on the user when their
-  // first subscription webhook arrives.
-  createBillingPortalUrl(customerId: string): Promise<string>;
+  // first subscription webhook arrives. `subscriptionId` is null for a
+  // user who has never had a subscription.
+  createBillingPortalUrl(
+    customerId: string,
+    subscriptionId: string | null
+  ): Promise<string>;
 }
 
 // A subscription event, normalised out of whatever shape the provider

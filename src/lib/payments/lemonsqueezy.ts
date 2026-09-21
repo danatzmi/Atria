@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import {
   createCheckout as lsCreateCheckout,
-  getCustomer,
+  getSubscription,
   lemonSqueezySetup,
 } from "@lemonsqueezy/lemonsqueezy.js";
 import type { PlanTier } from "@/lib/plans";
@@ -102,24 +102,45 @@ export const lemonSqueezyProvider: PaymentProvider = {
     return url;
   },
 
-  async createBillingPortalUrl(customerId: string): Promise<string> {
-    const apiKey = requireEnv("LEMON_SQUEEZY_API_KEY");
-    lemonSqueezySetup({ apiKey, onError: () => {} });
-
-    const { data, error } = await getCustomer(customerId);
-    if (error) {
+  // Read from the SUBSCRIPTION, not the customer.
+  //
+  // Both objects expose `urls.customer_portal`, and the customer's one is
+  // the wrong link: it resolves to the generic app.lemonsqueezy.com
+  // my-orders page, which asks the customer to prove who they are by
+  // email before showing them anything — and misbehaves outright for a
+  // user who also happens to be a merchant on the platform.
+  //
+  // The subscription's is a pre-signed magic link on the store's own
+  // domain that opens straight into the portal with no login step. The
+  // SDK's own types reflect the difference: it is `string | null` on a
+  // customer and plain `string` on a subscription.
+  //
+  // Both are valid for 24 hours, so this is generated per click and never
+  // stored — see ManageBillingButton, which fetches it on demand.
+  async createBillingPortalUrl(
+    _customerId: string,
+    subscriptionId: string | null
+  ): Promise<string> {
+    if (!subscriptionId) {
       throw new PaymentProviderError(
-        `Lemon Squeezy could not load the customer: ${error.message}`
+        "This account has no Lemon Squeezy subscription to manage."
       );
     }
 
-    // Pre-signed and valid for 24 hours, so it is generated per request and
-    // never stored. Null when the customer has never bought a subscription
-    // — there is nothing for them to manage yet.
+    const apiKey = requireEnv("LEMON_SQUEEZY_API_KEY");
+    lemonSqueezySetup({ apiKey, onError: () => {} });
+
+    const { data, error } = await getSubscription(subscriptionId);
+    if (error) {
+      throw new PaymentProviderError(
+        `Lemon Squeezy could not load the subscription: ${error.message}`
+      );
+    }
+
     const url = data?.data?.attributes?.urls?.customer_portal;
     if (!url) {
       throw new PaymentProviderError(
-        "Lemon Squeezy returned no customer portal URL for this customer."
+        "Lemon Squeezy returned no customer portal URL for this subscription."
       );
     }
     return url;
