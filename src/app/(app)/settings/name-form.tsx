@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { updateName, type SettingsActionState } from "./actions";
 import { PencilIcon } from "../projects/[id]/folder/item-icon";
+import { Tooltip } from "@/components/tooltip";
 
 const initialState: SettingsActionState = { error: null };
 
@@ -48,17 +49,19 @@ export function NameForm({ initialName }: { initialName: string }) {
         <p className="min-w-0 truncate text-sm text-zinc-900">
           {initialName || <span className="text-zinc-400">Not set</span>}
         </p>
-        <button
-          type="button"
-          onClick={() => {
-            setDraft(initialName);
-            setEditing(true);
-          }}
-          aria-label="Edit your name"
-          className="shrink-0 rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
-        >
-          <PencilIcon className="h-3.5 w-3.5" />
-        </button>
+        <Tooltip label="Edit your name">
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(initialName);
+              setEditing(true);
+            }}
+            aria-label="Edit your name"
+            className="shrink-0 rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+          >
+            <PencilIcon className="h-3.5 w-3.5" />
+          </button>
+        </Tooltip>
       </div>
     );
   }

@@ -8,6 +8,7 @@ import {
   type FolderActionState,
 } from "./actions";
 import { FolderIcon, MoveIcon } from "./item-icon";
+import { Tooltip } from "@/components/tooltip";
 
 const initialState: FolderActionState = { error: null };
 
@@ -59,18 +60,20 @@ export function MoveDialog({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
-          setTrail([{ id: null, name: "Project root" }]);
-          dialogRef.current?.showModal();
-          setOpen(true);
-        }}
-        className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
-        aria-label="Move"
-      >
-        <MoveIcon className="h-4 w-4" />
-      </button>
+      <Tooltip label="Move">
+        <button
+          type="button"
+          onClick={() => {
+            setTrail([{ id: null, name: "Project root" }]);
+            dialogRef.current?.showModal();
+            setOpen(true);
+          }}
+          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+          aria-label="Move"
+        >
+          <MoveIcon className="h-4 w-4" />
+        </button>
+      </Tooltip>
 
       <dialog
         ref={dialogRef}

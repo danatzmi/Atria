@@ -8,6 +8,7 @@ import {
   type FolderActionState,
 } from "./actions";
 import { TrashIcon } from "./item-icon";
+import { Tooltip } from "@/components/tooltip";
 
 const initialState: FolderActionState = { error: null };
 
@@ -42,23 +43,25 @@ export function DeleteItemDialog({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={(e) => {
-          // The sidebar's hover-revealed action cluster sits inside a row
-          // that also handles drag/drop and (for the whole row) navigation
-          // — stopping propagation here keeps a click on this button from
-          // ever bubbling into either of those.
-          e.stopPropagation();
-          e.preventDefault();
-          dialogRef.current?.showModal();
-          setOpen(true);
-        }}
-        className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-red-50 hover:text-red-600"
-        aria-label="Delete"
-      >
-        <TrashIcon className="h-4 w-4" />
-      </button>
+      <Tooltip label="Delete">
+        <button
+          type="button"
+          onClick={(e) => {
+            // The sidebar's hover-revealed action cluster sits inside a row
+            // that also handles drag/drop and (for the whole row) navigation
+            // — stopping propagation here keeps a click on this button from
+            // ever bubbling into either of those.
+            e.stopPropagation();
+            e.preventDefault();
+            dialogRef.current?.showModal();
+            setOpen(true);
+          }}
+          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-red-50 hover:text-red-600"
+          aria-label="Delete"
+        >
+          <TrashIcon className="h-4 w-4" />
+        </button>
+      </Tooltip>
 
       <dialog
         ref={dialogRef}

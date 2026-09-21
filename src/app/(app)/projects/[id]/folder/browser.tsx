@@ -34,6 +34,7 @@ import { DeleteItemDialog } from "./delete-item-dialog";
 import { FolderFormDialog } from "./folder-form-dialog";
 import { BlockFormDialog } from "./block-form-dialog";
 import { Dropdown } from "@/components/dropdown";
+import { Tooltip } from "@/components/tooltip";
 
 // This level's own block stream — Sub-tabs no longer render inline here
 // (they live exclusively in the persistent left sidebar; see
@@ -417,14 +418,16 @@ export function FolderBrowser({
                       : item.error}
                 </span>
                 {item.status !== "uploading" && (
-                  <button
-                    type="button"
-                    onClick={() => removeItem(item.id)}
-                    aria-label="Dismiss"
-                    className="text-stone-400 transition-colors hover:text-stone-700"
-                  >
-                    ×
-                  </button>
+                  <Tooltip label="Dismiss">
+                    <button
+                      type="button"
+                      onClick={() => removeItem(item.id)}
+                      aria-label="Dismiss"
+                      className="text-stone-400 transition-colors hover:text-stone-700"
+                    >
+                      ×
+                    </button>
+                  </Tooltip>
                 )}
               </span>
             </li>
@@ -550,24 +553,28 @@ function MoveItemButtons({
 
   return (
     <div className="mb-1 flex justify-end gap-1">
-      <button
-        type="button"
-        onClick={onMoveUp}
-        disabled={!canMoveUp}
-        aria-label="Move up"
-        className={base}
-      >
-        <ChevronIcon className="h-4 w-4 -rotate-90" />
-      </button>
-      <button
-        type="button"
-        onClick={onMoveDown}
-        disabled={!canMoveDown}
-        aria-label="Move down"
-        className={base}
-      >
-        <ChevronIcon className="h-4 w-4 rotate-90" />
-      </button>
+      <Tooltip label="Move up">
+        <button
+          type="button"
+          onClick={onMoveUp}
+          disabled={!canMoveUp}
+          aria-label="Move up"
+          className={base}
+        >
+          <ChevronIcon className="h-4 w-4 -rotate-90" />
+        </button>
+      </Tooltip>
+      <Tooltip label="Move down">
+        <button
+          type="button"
+          onClick={onMoveDown}
+          disabled={!canMoveDown}
+          aria-label="Move down"
+          className={base}
+        >
+          <ChevronIcon className="h-4 w-4 rotate-90" />
+        </button>
+      </Tooltip>
     </div>
   );
 }

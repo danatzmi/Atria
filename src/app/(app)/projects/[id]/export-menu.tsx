@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Dropdown } from "@/components/dropdown";
+import { Tooltip } from "@/components/tooltip";
 
 // Standard printer glyph — the conventional Print/Save-as-PDF affordance,
 // rather than a document icon.
@@ -41,22 +42,23 @@ export function ExportMenu({ projectId }: { projectId: string }) {
 
   if (!activeTabId) {
     return (
-      <Link
-        href={base}
-        target="_blank"
-        rel="noopener noreferrer"
-        // /export is the most expensive route in the app — it walks every
-        // folder and block in the project and signs a URL per file. Because
-        // target="_blank" opens a fresh document, a prefetched payload can
-        // never be read by the tab that opens; it would be rendered on the
-        // server and discarded on every project page view.
-        prefetch={false}
-        className={TRIGGER_CLASS}
-        aria-label="Export PDF"
-        title="Export PDF"
-      >
-        <PrinterIcon className="h-4 w-4" />
-      </Link>
+      <Tooltip label="Export PDF">
+        <Link
+          href={base}
+          target="_blank"
+          rel="noopener noreferrer"
+          // /export is the most expensive route in the app — it walks every
+          // folder and block in the project and signs a URL per file. Because
+          // target="_blank" opens a fresh document, a prefetched payload can
+          // never be read by the tab that opens; it would be rendered on the
+          // server and discarded on every project page view.
+          prefetch={false}
+          className={TRIGGER_CLASS}
+          aria-label="Export PDF"
+        >
+          <PrinterIcon className="h-4 w-4" />
+        </Link>
+      </Tooltip>
     );
   }
 
@@ -70,10 +72,12 @@ export function ExportMenu({ projectId }: { projectId: string }) {
       menuClassName="w-48"
       contentWidth={192}
       trigger={(props) => (
-        <button {...props} type="button" className={TRIGGER_CLASS} title="Export PDF">
-          <span className="sr-only">Export PDF</span>
-          <PrinterIcon className="h-4 w-4" />
-        </button>
+        <Tooltip label="Export PDF">
+          <button {...props} type="button" className={TRIGGER_CLASS}>
+            <span className="sr-only">Export PDF</span>
+            <PrinterIcon className="h-4 w-4" />
+          </button>
+        </Tooltip>
       )}
     >
       {(close) => (

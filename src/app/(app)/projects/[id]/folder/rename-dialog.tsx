@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { renameFile, renameFolder, type FolderActionState } from "./actions";
 import { PencilIcon } from "./item-icon";
+import { Tooltip } from "@/components/tooltip";
 
 const initialState: FolderActionState = { error: null };
 
@@ -39,17 +40,19 @@ export function RenameDialog({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
-          dialogRef.current?.showModal();
-          setOpen(true);
-        }}
-        className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
-        aria-label="Rename"
-      >
-        <PencilIcon className="h-4 w-4" />
-      </button>
+      <Tooltip label="Rename">
+        <button
+          type="button"
+          onClick={() => {
+            dialogRef.current?.showModal();
+            setOpen(true);
+          }}
+          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+          aria-label="Rename"
+        >
+          <PencilIcon className="h-4 w-4" />
+        </button>
+      </Tooltip>
 
       <dialog
         ref={dialogRef}

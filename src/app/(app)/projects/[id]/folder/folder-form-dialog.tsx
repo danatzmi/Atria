@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { createFolder, type FolderActionState } from "./actions";
+import { Tooltip } from "@/components/tooltip";
 
 const initialState: FolderActionState = { error: null };
 
@@ -10,6 +11,7 @@ export function FolderFormDialog({
   parentFolderId,
   sortOrder,
   triggerLabel = "New tab",
+  triggerTitle,
   triggerClassName,
   dialogTitle = "New tab",
   namePlaceholder = "Suppliers",
@@ -22,6 +24,11 @@ export function FolderFormDialog({
   // to the end, same as the "+ Add Sub-tab" trigger's default.
   sortOrder?: number;
   triggerLabel?: string;
+  // For triggers whose label is a bare glyph — the sidebar's "+" — where the
+  // visible character is not a usable name for either a tooltip or a screen
+  // reader. Text triggers ("New tab", "+ Sub-tab") say what they do already
+  // and deliberately leave this unset rather than repeating themselves.
+  triggerTitle?: string;
   triggerClassName?: string;
   dialogTitle?: string;
   namePlaceholder?: string;
@@ -48,19 +55,22 @@ export function FolderFormDialog({
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
-          dialogRef.current?.showModal();
-          setOpen(true);
-        }}
-        className={
-          triggerClassName ??
-          "rounded-md border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50"
-        }
-      >
-        {triggerLabel}
-      </button>
+      <Tooltip label={triggerTitle}>
+        <button
+          type="button"
+          onClick={() => {
+            dialogRef.current?.showModal();
+            setOpen(true);
+          }}
+          aria-label={triggerTitle}
+          className={
+            triggerClassName ??
+            "rounded-md border border-stone-300 px-4 py-2 text-sm font-medium text-stone-700 transition-colors hover:bg-stone-50"
+          }
+        >
+          {triggerLabel}
+        </button>
+      </Tooltip>
 
       <dialog
         ref={dialogRef}

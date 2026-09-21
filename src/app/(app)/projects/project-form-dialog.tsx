@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { createProject, renameProject, type ProjectActionState } from "./actions";
+import { Tooltip } from "@/components/tooltip";
 
 const initialState: ProjectActionState = { error: null };
 
@@ -64,37 +65,41 @@ export function ProjectFormDialog(props: ProjectFormDialogProps) {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => {
-          dialogRef.current?.showModal();
-          setOpen(true);
-        }}
-        className={
-          props.mode === "create"
-            ? "rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
-            : (props.triggerClassName ??
-              "rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900")
-        }
-        aria-label={
-          props.mode === "create" || props.triggerLabel ? undefined : dialogTitle
-        }
-      >
-        {props.mode === "create" ? (
-          "New project"
-        ) : props.triggerLabel ? (
-          props.triggerLabel
-        ) : (
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            className="h-4 w-4"
-          >
-            <path d="M13.586 3.586a2 2 0 1 1 2.828 2.828l-8.5 8.5a2 2 0 0 1-.878.507l-3 .8a.5.5 0 0 1-.612-.613l.8-3a2 2 0 0 1 .506-.878l8.5-8.5a2 2 0 0 1 .356-.244Z" />
-          </svg>
-        )}
-      </button>
+      <Tooltip label={props.mode === "create" || props.triggerLabel ? undefined : dialogTitle}>
+        <button
+          type="button"
+          onClick={() => {
+            dialogRef.current?.showModal();
+            setOpen(true);
+          }}
+          className={
+            props.mode === "create"
+              ? "rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
+              : (props.triggerClassName ??
+                "rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900")
+          }
+          aria-label={
+            props.mode === "create" || props.triggerLabel ? undefined : dialogTitle
+          }
+          // Same condition as the aria-label above: a tooltip on the text
+          // variants would just repeat the words already on the button.
+        >
+          {props.mode === "create" ? (
+            "New project"
+          ) : props.triggerLabel ? (
+            props.triggerLabel
+          ) : (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="h-4 w-4"
+            >
+              <path d="M13.586 3.586a2 2 0 1 1 2.828 2.828l-8.5 8.5a2 2 0 0 1-.878.507l-3 .8a.5.5 0 0 1-.612-.613l.8-3a2 2 0 0 1 .506-.878l8.5-8.5a2 2 0 0 1 .356-.244Z" />
+            </svg>
+          )}
+        </button>
+      </Tooltip>
 
       <dialog
         ref={dialogRef}

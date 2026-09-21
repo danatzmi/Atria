@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@lemonsqueezy/lemonsqueezy.js": "^4.0.0",
+    "@radix-ui/react-tooltip": "^1.2.16",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
     "@tiptap/core": "^3.30.5",

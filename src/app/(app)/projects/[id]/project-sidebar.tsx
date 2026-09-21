@@ -9,6 +9,7 @@ import { DividerDropZone } from "./folder/divider-row";
 import { ChevronIcon, CloseIcon, SidebarToggleIcon } from "./folder/item-icon";
 import { midpointSortOrder } from "@/lib/sort-order";
 import { readDragPayload, setDragPayload, type DragPayload } from "@/lib/drag-payload";
+import { Tooltip } from "@/components/tooltip";
 
 export type SidebarTab = { id: string; name: string; sort_order: number };
 
@@ -135,31 +136,35 @@ export function ProjectSidebar({
       >
         <div className="mb-2 flex items-center justify-between md:hidden">
           <span className="text-sm font-semibold text-stone-900">Tabs</span>
-          <button
-            type="button"
-            onClick={onCloseMobile}
-            aria-label="Close"
-            className="rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-100"
-          >
-            <CloseIcon className="h-5 w-5" />
-          </button>
+          <Tooltip label="Close">
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              aria-label="Close"
+              className="rounded-md p-1.5 text-stone-500 transition-colors hover:bg-stone-100"
+            >
+              <CloseIcon className="h-5 w-5" />
+            </button>
+          </Tooltip>
         </div>
 
         {/* No "Overview" row here — the project title in the top nav bar is
             the way back to the project home view. */}
         <div className="flex items-center justify-between px-3">
-          <button
-            type="button"
-            onClick={onToggleCollapsed}
-            title="Collapse sidebar"
-            className="hidden items-center justify-center rounded-md p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 md:flex"
-          >
-            <SidebarToggleIcon className="h-4 w-4" />
-          </button>
+          <Tooltip label="Collapse sidebar">
+            <button
+              type="button"
+              onClick={onToggleCollapsed}
+              className="hidden items-center justify-center rounded-md p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 md:flex"
+            >
+              <SidebarToggleIcon className="h-4 w-4" />
+            </button>
+          </Tooltip>
           <FolderFormDialog
             projectId={projectId}
             parentFolderId={null}
             triggerLabel="+"
+            triggerTitle="New tab"
             triggerClassName="flex h-5 w-5 items-center justify-center rounded-full bg-stone-100 pb-0.5 text-lg font-light text-stone-500 transition-colors hover:bg-stone-200 hover:text-stone-900"
             dialogTitle="New tab"
             namePlaceholder="Kitchen"
@@ -537,21 +542,23 @@ function SidebarTabNode({
         </button>
 
         {hasSubtabs ? (
-          <button
-            type="button"
-            onClick={toggleExpand}
-            className={`order-last flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors hover:bg-stone-200/70 hover:text-stone-900 ${
-              isActive ? "text-stone-600" : "text-stone-400"
-            }`}
-            aria-label={expanded ? "Collapse" : "Expand"}
-            aria-expanded={expanded}
-          >
-            <ChevronIcon
-              className={`h-3.5 w-3.5 transition-transform duration-150 ${
-                expanded ? "rotate-90" : ""
+          <Tooltip label={expanded ? "Collapse" : "Expand"}>
+            <button
+              type="button"
+              onClick={toggleExpand}
+              className={`order-last flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors hover:bg-stone-200/70 hover:text-stone-900 ${
+                isActive ? "text-stone-600" : "text-stone-400"
               }`}
-            />
-          </button>
+              aria-label={expanded ? "Collapse" : "Expand"}
+              aria-expanded={expanded}
+            >
+              <ChevronIcon
+                className={`h-3.5 w-3.5 transition-transform duration-150 ${
+                  expanded ? "rotate-90" : ""
+                }`}
+              />
+            </button>
+          </Tooltip>
         ) : null}
         <div
           // `flex` unconditionally, never `hidden` (display:none) — a
