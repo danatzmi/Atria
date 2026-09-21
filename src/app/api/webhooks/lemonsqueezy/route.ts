@@ -63,6 +63,17 @@ export async function POST(request: Request) {
       plan: event.tier,
       stripe_customer_id: event.customerId,
       stripe_subscription_id: event.subscriptionId,
+      // Written on every subscription event, so the row is a refreshed
+      // snapshot of the provider's state rather than an accumulation of
+      // whichever fields happened to be present. A null here means the
+      // provider currently reports nothing, which is the truth worth
+      // storing — carrying a stale renewal date forward would be worse.
+      subscription_status: event.status,
+      subscription_renews_at: event.renewsAt,
+      subscription_ends_at: event.endsAt,
+      subscription_cancelled: event.cancelled,
+      card_brand: event.cardBrand,
+      card_last_four: event.cardLastFour,
     })
     .eq("id", event.userId);
 

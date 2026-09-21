@@ -217,6 +217,10 @@ export function parseSubscriptionEvent(
         customer_id?: number | string;
         status?: string;
         cancelled?: boolean;
+        renews_at?: string | null;
+        ends_at?: string | null;
+        card_brand?: string | null;
+        card_last_four?: string | null;
       };
     };
   };
@@ -242,10 +246,21 @@ export function parseSubscriptionEvent(
   const tier = ended ? "free" : planForVariantId(attrs.variant_id ?? "");
   if (tier === null) return null;
 
+  // Read defensively rather than trusting the payload's shape: this is
+  // parsing a third party's JSON, and a missing field should cost a line on
+  // the billing page, not a 500 that makes Lemon Squeezy retry forever.
+  const str = (v: unknown) => (typeof v === "string" && v ? v : null);
+
   return {
     userId,
     tier,
     customerId: attrs.customer_id != null ? String(attrs.customer_id) : null,
     subscriptionId: body?.data?.id != null ? String(body.data.id) : null,
+    status: status || null,
+    renewsAt: str(attrs.renews_at),
+    endsAt: str(attrs.ends_at),
+    cancelled: attrs.cancelled === true,
+    cardBrand: str(attrs.card_brand),
+    cardLastFour: str(attrs.card_last_four),
   };
 }

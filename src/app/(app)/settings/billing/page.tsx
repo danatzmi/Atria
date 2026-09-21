@@ -17,7 +17,9 @@ export default async function BillingSettingsPage() {
   const [{ data: profile }, { count: projectCount }] = await Promise.all([
     supabase
       .from("users")
-      .select("plan, stripe_customer_id")
+      .select(
+        "plan, stripe_customer_id, subscription_status, subscription_renews_at, subscription_ends_at, subscription_cancelled, card_brand, card_last_four"
+      )
       .eq("id", user.id)
       .maybeSingle(),
     supabase
@@ -33,6 +35,19 @@ export default async function BillingSettingsPage() {
     plan.projectLimit === Infinity ? "unlimited" : String(plan.projectLimit);
   const atLimit = used >= plan.projectLimit;
   const hasSubscription = !!profile?.stripe_customer_id;
+
+  const cancelled = profile?.subscription_cancelled === true;
+  const pastDue = profile?.subscription_status === "past_due";
+  // A cancelled subscription is still running until it ends, so the date
+  // that matters flips from "next charge" to "last day".
+  const dateLabel = cancelled ? "Cancels on" : "Renews on";
+  const dateValue = formatBillingDate(
+    cancelled ? profile?.subscription_ends_at : profile?.subscription_renews_at
+  );
+  const card =
+    profile?.card_brand && profile?.card_last_four
+      ? `${capitalize(profile.card_brand)} ending in ${profile.card_last_four}`
+      : null;
 
   return (
     <div className="space-y-10">
@@ -75,7 +90,40 @@ export default async function BillingSettingsPage() {
             <h2 className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
               Subscription
             </h2>
-            <ManageBillingButton />
+
+            {/* Above the details, not below: a failing payment is the one
+                thing on this page someone must act on, and it explains why
+                the button underneath says what it says. */}
+            {pastDue && (
+              <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-3">
+                <p className="text-sm font-medium text-amber-900">
+                  Your last payment didn&rsquo;t go through
+                </p>
+                <p className="mt-1 text-sm text-amber-900/80">
+                  Update your payment method below to keep your subscription
+                  active.
+                </p>
+              </div>
+            )}
+
+            {(dateValue || card) && (
+              <dl className="mt-4 space-y-2 text-sm">
+                {dateValue && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-zinc-500">{dateLabel}</dt>
+                    <dd className="text-zinc-900">{dateValue}</dd>
+                  </div>
+                )}
+                {card && (
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-zinc-500">Payment method</dt>
+                    <dd className="text-zinc-900">{card}</dd>
+                  </div>
+                )}
+              </dl>
+            )}
+
+            <ManageBillingButton cancelled={cancelled} />
           </>
         ) : (
           <>
@@ -93,4 +141,24 @@ export default async function BillingSettingsPage() {
       </section>
     </div>
   );
+}
+
+// The provider's brand strings arrive lowercase ("visa", "mastercard").
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+// Intl rather than toLocaleDateString with no arguments: this renders on
+// the server, so an unqualified call would format in the server's locale,
+// not the reader's. Pinning en-GB keeps it stable and unambiguous —
+// "14 March 2026" cannot be misread the way 03/14 vs 14/03 can.
+function formatBillingDate(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
 }

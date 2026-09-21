@@ -68,6 +68,24 @@ export type SubscriptionEvent = {
   tier: PlanTier;
   customerId: string | null;
   subscriptionId: string | null;
+
+  // Everything below is for display only — never for deciding what a user
+  // may do. `tier` above is the single field access control reads, so a
+  // provider that stops sending card details degrades the billing page
+  // rather than locking anyone out.
+  //
+  // All nullable: a provider may omit any of them, and an event that
+  // arrives without card details should still record the plan change.
+  status: string | null;
+  renewsAt: string | null;
+  endsAt: string | null;
+  // Not the same as status === "cancelled". Lemon Squeezy sets this the
+  // moment someone opts out, while the subscription stays active until the
+  // period ends — so this is true during a window when the user still has
+  // full access, and the UI must say "cancels on…" rather than "cancelled".
+  cancelled: boolean;
+  cardBrand: string | null;
+  cardLastFour: string | null;
 };
 
 // Missing or malformed configuration — an operator problem (an unset env
