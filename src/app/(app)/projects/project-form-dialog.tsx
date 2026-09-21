@@ -194,8 +194,14 @@ export function ProjectFormDialog(props: ProjectFormDialogProps) {
                 // validation text the user can do nothing about.
                 <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-3">
                   <p className="text-sm text-zinc-700">{state.error}</p>
+                  {/* Not the marketing page's #pricing anchor: that route
+                      redirects signed-in visitors straight to /projects, so
+                      this link used to bounce the user back to the dashboard
+                      they were trying to leave. /settings/billing renders
+                      the same PricingWidget for anyone without a
+                      subscription. */}
                   <Link
-                    href="/#pricing"
+                    href="/settings/billing"
                     className="mt-2 inline-block text-sm font-medium text-zinc-900 underline underline-offset-2 transition-colors hover:text-zinc-600"
                   >
                     See plans
