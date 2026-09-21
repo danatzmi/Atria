@@ -35,6 +35,7 @@ import { FolderFormDialog } from "./folder-form-dialog";
 import { BlockFormDialog } from "./block-form-dialog";
 import { Dropdown } from "@/components/dropdown";
 import { Tooltip } from "@/components/tooltip";
+import { scrollToBlock } from "./scroll-to-block";
 
 // This level's own block stream — Sub-tabs no longer render inline here
 // (they live exclusively in the persistent left sidebar; see
@@ -187,13 +188,15 @@ export function FolderBrowser({
     setQueue((q) => q.filter((it) => it.id !== id));
   }
 
-  async function uploadOne(file: File, sortOrder?: number) {
+  // Returns the created block's id so uploadFiles can scroll to it once the
+  // whole batch has landed.
+  async function uploadOne(file: File, sortOrder?: number): Promise<string | undefined> {
     const itemId = crypto.randomUUID();
     setQueue((q) => [...q, { id: itemId, name: file.name, status: "uploading", error: null }]);
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
       updateItem(itemId, { status: "error", error: `Over the ${formatBytes(MAX_FILE_SIZE_BYTES)} limit.` });
-      return;
+      return undefined;
     }
 
     const mimeType = file.type || "application/octet-stream";
@@ -206,10 +209,10 @@ export function FolderBrowser({
 
     if (uploadError) {
       updateItem(itemId, { status: "error", error: "Upload failed." });
-      return;
+      return undefined;
     }
 
-    const { error: recordError } = await createFileRecord({
+    const { id: blockId, error: recordError } = await createFileRecord({
       projectId,
       folderId,
       name: file.name,
@@ -222,23 +225,31 @@ export function FolderBrowser({
     if (recordError) {
       await supabase.storage.from(PROJECT_FILES_BUCKET).remove([storageKey]);
       updateItem(itemId, { status: "error", error: recordError });
-      return;
+      return undefined;
     }
 
     updateItem(itemId, { status: "done", error: null });
     setTimeout(() => removeItem(itemId), 3500);
+    return blockId;
   }
 
   async function uploadFiles(files: FileList | File[], sortOrder?: number) {
     // A tiny per-file offset keeps a multi-file drop/selection in its
     // original order without any of them colliding with the neighbor just
     // past this gap.
-    await Promise.all(
+    const ids = await Promise.all(
       Array.from(files).map((file, i) =>
         uploadOne(file, sortOrder === undefined ? undefined : sortOrder + i * 1e-6)
       )
     );
     refresh();
+
+    // A multi-file drop gets one scroll, not one per file — they would
+    // fight each other and land somewhere arbitrary. The last successful
+    // upload is the bottom of the new run, and scrolling there puts the
+    // rest of the batch above it, on screen.
+    const landed = ids.filter((id): id is string => Boolean(id));
+    scrollToBlock(landed[landed.length - 1]);
   }
 
   function pickAndUploadFiles(sortOrder?: number) {
@@ -664,7 +675,7 @@ function TextBlockRow({
   onChanged: () => void;
 }) {
   return (
-    <div className="group flex items-start">
+    <div id={block.id} className="group flex items-start">
       {/* The card body IS the drag source — there's no separate grip.
           select-none matters here specifically: a mousedown landing on the
           prose would otherwise start a native text-selection gesture that
@@ -743,7 +754,7 @@ function PhotoBlockRow({
   if (!file) return null;
 
   return (
-    <div className="group flex items-start">
+    <div id={block.id} className="group flex items-start">
       {/* The card itself is the drag source. select-none matters here —
           without it, a mousedown that lands on the caption text starts a
           native text-selection gesture instead of (or racing) the drag,
@@ -892,7 +903,7 @@ function PhotoGridItem({
   if (!file) return null;
 
   return (
-    <div className="group/griditem relative">
+    <div id={block.id} className="group/griditem relative">
       <PhotoCardBody
         projectId={projectId}
         file={file}
@@ -920,7 +931,7 @@ function VideoBlockRow({
   if (!file) return null;
 
   return (
-    <div className="group flex items-start">
+    <div id={block.id} className="group flex items-start">
       <div
         className="group/video relative w-full max-w-xs flex-1"
       >
@@ -1017,7 +1028,7 @@ function DocumentBlockRow({
   }
 
   return (
-    <div className="group/file relative flex items-start">
+    <div id={block.id} className="group/file relative flex items-start">
       {/* `relative` here, not only on the wrapper — the hover actions below
           are absolutely positioned and must anchor to this max-w-xs card,
           not to the full-width row around it. */}

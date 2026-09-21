@@ -313,7 +313,10 @@ export async function createFileRecord(input: {
   // Explicit position for a specific insert-bar gap or drop target; omitted
   // means append to the end of the section (nextSortOrder below).
   sortOrder?: number;
-}): Promise<{ error: string | null }> {
+  // The id returned on success is the *block's*, not the file's. The block
+  // is what the stream renders and what carries the DOM id, so it is the
+  // thing a caller can actually scroll to.
+}): Promise<{ id?: string; error: string | null }> {
   const supabase = await createClient();
   const { data: file, error } = await supabase
     .from("files")
@@ -343,13 +346,17 @@ export async function createFileRecord(input: {
   const sortOrder =
     input.sortOrder ?? (await nextSortOrder(supabase, input.projectId, input.folderId));
 
-  const { error: blockError } = await supabase.from("blocks").insert({
-    project_id: input.projectId,
-    section_id: input.folderId,
-    type: blockType,
-    file_id: file.id,
-    sort_order: sortOrder,
-  });
+  const { data: block, error: blockError } = await supabase
+    .from("blocks")
+    .insert({
+      project_id: input.projectId,
+      section_id: input.folderId,
+      type: blockType,
+      file_id: file.id,
+      sort_order: sortOrder,
+    })
+    .select("id")
+    .single();
 
   if (blockError) {
     // A file with no block would be invisible in the stream — safer to roll
@@ -360,7 +367,10 @@ export async function createFileRecord(input: {
   }
 
   revalidateProjectFiles(input.projectId);
-  return { error: null };
+  // A missing id is not an error — the row exists either way. It only means
+  // the caller cannot scroll to it, so `id` stays optional rather than
+  // failing an upload that actually succeeded.
+  return { id: block?.id, error: null };
 }
 
 export async function renameFile(
@@ -450,26 +460,30 @@ export async function createTextBlock(
   content: string,
   sortOrder?: number,
   typography?: { fontFamily: BlockFontFamily; fontSize: BlockFontSize }
-): Promise<{ error: string | null }> {
+): Promise<{ id?: string; error: string | null }> {
   const text = content.trim();
   const doc = tryParseDocJSON(text);
   if (!text || (doc && docJSONIsEmpty(doc))) return { error: "Write something first." };
 
   const supabase = await createClient();
   const resolvedSortOrder = sortOrder ?? (await nextSortOrder(supabase, projectId, sectionId));
-  const { error } = await supabase.from("blocks").insert({
-    project_id: projectId,
-    section_id: sectionId,
-    type: "text",
-    content: text,
-    sort_order: resolvedSortOrder,
-    font_family: typography?.fontFamily ?? null,
-    font_size: typography?.fontSize ?? null,
-  });
+  const { data: block, error } = await supabase
+    .from("blocks")
+    .insert({
+      project_id: projectId,
+      section_id: sectionId,
+      type: "text",
+      content: text,
+      sort_order: resolvedSortOrder,
+      font_family: typography?.fontFamily ?? null,
+      font_size: typography?.fontSize ?? null,
+    })
+    .select("id")
+    .single();
 
   if (error) return dbError("createTextBlock", error);
   revalidateProjectFiles(projectId);
-  return { error: null };
+  return { id: block?.id, error: null };
 }
 
 // Shared by text-block bodies and photo captions — both are just a block's

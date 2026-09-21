@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createTextBlock, updateBlockContent } from "./actions";
 import { RichTextEditorSurface, RichTextToolbar, useRichTextEditor } from "./rich-text-editor";
+import { scrollToBlock } from "./scroll-to-block";
 
 // Owns the TipTap editor instance — mounted only for kind: "text" (never
 // for a caption's plain input), so a photo caption dialog never pays for an
@@ -93,10 +94,18 @@ export function BlockFormDialog({
 
     const content = multiline ? (fieldsRef.current?.getContent() ?? "") : captionContent;
 
-    const result =
-      mode === "edit"
-        ? await updateBlockContent(blockId!, projectId, content)
-        : await createTextBlock(projectId, sectionId, content, sortOrder);
+    // Split rather than a ternary so the created block's id survives: the
+    // two actions return different shapes, and a union of them has no `id`
+    // to read on the branch that does produce one.
+    let newBlockId: string | undefined;
+    let result: { error: string | null };
+    if (mode === "edit") {
+      result = await updateBlockContent(blockId!, projectId, content);
+    } else {
+      const created = await createTextBlock(projectId, sectionId, content, sortOrder);
+      newBlockId = created.id;
+      result = created;
+    }
 
     setPending(false);
     if (result.error) {
@@ -106,6 +115,11 @@ export function BlockFormDialog({
     dialogRef.current?.close();
     setOpen(false);
     onSuccess?.();
+
+    // Only for a brand-new block. An edit leaves the card exactly where it
+    // already was, and yanking the page to something the user is looking at
+    // is worse than doing nothing.
+    scrollToBlock(newBlockId);
   }
 
   return (
