@@ -87,7 +87,8 @@ export async function openBillingPortal(): Promise<PortalState> {
       customerId,
       subscriptionId
     );
-    return { status: "redirect", url };
+    // Temporary debug: Print the URL directly to the user's screen instead of redirecting
+    return { status: "error", message: `DEBUG URL FROM API: ${url}` };
   } catch (error) {
     if (error instanceof PaymentConfigError) {
       console.error("[atria] billing portal misconfigured:", error.message);
