@@ -18,7 +18,7 @@ export default async function BillingSettingsPage() {
     supabase
       .from("users")
       .select(
-        "plan, stripe_customer_id, subscription_status, subscription_renews_at, subscription_ends_at, subscription_cancelled, card_brand, card_last_four"
+        "plan, subscription_status, subscription_renews_at, subscription_ends_at, subscription_cancelled, card_brand, card_last_four"
       )
       .eq("id", user.id)
       .maybeSingle(),
@@ -34,7 +34,17 @@ export default async function BillingSettingsPage() {
   const limitLabel =
     plan.projectLimit === Infinity ? "unlimited" : String(plan.projectLimit);
   const atLimit = used >= plan.projectLimit;
-  const hasSubscription = !!profile?.stripe_customer_id;
+  // The plan, not the customer id. A customer id is permanent — it is kept
+  // after a subscription ends so a returning customer keeps one billing
+  // identity — so testing it answered "have they ever paid?", which stays
+  // true forever. The page needs "are they paying now?", and that is
+  // exactly what the tier says: the webhook drops it to free the moment a
+  // subscription expires.
+  //
+  // Read off the normalised plan rather than profile.plan directly, so an
+  // unreadable row or an unrecognised value falls back to free and shows
+  // the upgrade widget, rather than a Subscription panel with nothing in it.
+  const hasSubscription = plan.tier !== "free";
 
   const cancelled = profile?.subscription_cancelled === true;
   const pastDue = profile?.subscription_status === "past_due";
