@@ -349,8 +349,12 @@ export function FolderBrowser({
         </div>
         <div className="flex w-full shrink-0 items-center gap-2 sm:w-auto">
           <>
-            {/* Only worth showing once there is something to rearrange. */}
-            {blocks.length > 1 && (
+            {/* Any block at all, not just enough of them to reorder.
+                Reordering is the least of what Edit Mode gates: rename,
+                move and delete all live behind it too, so hiding the
+                toggle at one block left that block uneditable and
+                undeletable with no other route to either. */}
+            {blocks.length > 0 && (
               <button
                 type="button"
                 onClick={() => setEditing((v) => !v)}

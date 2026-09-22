@@ -1,0 +1,30 @@
+-- Atria — let one billing customer pay for several accounts.
+--
+-- 0007 made stripe_customer_id unique on the assumption that a customer and
+-- an account are the same person. They are not. Lemon Squeezy keys a
+-- Customer on the billing email, so one person paying for two Atria
+-- accounts — an agency owner, a parent, anyone running a second workspace —
+-- gets ONE customer id issued against BOTH subscriptions.
+--
+-- The failure was silent and permanent: the second account's webhook tried
+-- to write a customer id another row already held, violated this index, and
+-- the route returned 500. Lemon Squeezy then retried the same event
+-- forever, and the person who had paid never got their plan.
+--
+-- Dropping it is safe now for a reason that was not true when 0007 was
+-- written: the billing portal link used to be fetched from the CUSTOMER, so
+-- a shared customer id would have handed two accounts the same portal. It
+-- is now fetched from the SUBSCRIPTION (see createBillingPortalUrl), and
+-- stripe_subscription_id is still unique below — so each account still
+-- resolves to exactly one subscription and exactly one portal.
+--
+-- Not replaced with a non-unique index: nothing looks a user up by customer
+-- id. Every read selects it by the user's own id, and the webhook finds its
+-- user through the user_id in the checkout's custom data. An index here
+-- would cost writes and serve no query.
+drop index if exists public.users_stripe_customer_id_idx;
+
+-- users_stripe_subscription_id_idx is deliberately left in place. A
+-- subscription really does belong to exactly one account, and it is now the
+-- identifier the portal link is derived from — so a duplicate there would
+-- be a genuine bug worth failing on.
