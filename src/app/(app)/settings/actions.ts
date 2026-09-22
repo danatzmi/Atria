@@ -127,10 +127,50 @@ export async function deleteAccount(): Promise<{ error: string } | never> {
 
   // Read with the user's own client so RLS guarantees we can only ever
   // collect this user's objects, even if the queries below were wrong.
-  const [{ data: files }, { data: projects }] = await Promise.all([
-    supabase.from("files").select("storage_key"),
-    supabase.from("projects").select("cover_image"),
-  ]);
+  const [{ data: files }, { data: projects }, { data: profile, error: profileError }] =
+    await Promise.all([
+      supabase.from("files").select("storage_key"),
+      supabase.from("projects").select("cover_image"),
+      supabase
+        .from("users")
+        .select("stripe_subscription_id, subscription_cancelled, subscription_status")
+        .eq("id", user.id)
+        .maybeSingle(),
+    ]);
+
+  // Deleting the account does NOT cancel the subscription — Lemon Squeezy
+  // has never heard of this deletion and will keep charging the card every
+  // month for a product the person can no longer log into. So this check
+  // runs before anything is removed, not after: once the storage objects
+  // are gone there is no un-deleting them if a later step fails.
+  //
+  // Fail closed. If the row can't be read we do not know whether they are
+  // paying, and "probably not" is not good enough to start billing someone
+  // for nothing.
+  if (profileError) {
+    console.error("[atria] deleteAccount could not read billing state:", profileError.message);
+    return {
+      error: "Couldn't check your subscription status. Nothing was deleted — please try again.",
+    };
+  }
+
+  // A subscription that has already run out cannot charge anyone again, and
+  // treating it as live would trap the user permanently: a subscription that
+  // ended through failed payment rather than cancellation keeps
+  // subscription_cancelled = false forever, so without this they could never
+  // delete their account at all.
+  const SETTLED_STATUSES = new Set(["expired", "unpaid", "cancelled"]);
+  const subscriptionCouldStillCharge =
+    !!profile?.stripe_subscription_id &&
+    profile.subscription_cancelled === false &&
+    !SETTLED_STATUSES.has(profile.subscription_status ?? "");
+
+  if (subscriptionCouldStillCharge) {
+    return {
+      error:
+        "You have an active subscription. Please go to the Billing tab and cancel it before deleting your account.",
+    };
+  }
 
   const storageKeys = [
     ...(files ?? []).map((f) => f.storage_key),
