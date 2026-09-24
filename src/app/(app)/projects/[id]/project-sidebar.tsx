@@ -578,7 +578,12 @@ function SidebarTabNode({
           // entirely inside the row, so there's no position where they'd
           // be both invisible and hoverable at once.
           className={`flex shrink-0 items-center gap-0.5 transition-opacity ${
-            isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            isActive
+              ? "opacity-100"
+              // Same reasoning as project-card.tsx: group-hover: only
+              // exists inside @media (hover:hover), so without this a
+              // touch user can rename or delete the open tab and no other.
+              : "opacity-0 group-hover:opacity-100 [@media(hover:none)]:opacity-100"
           }`}
           // The row itself is a drag source and (via its sibling
           // navigate button) a click-to-navigate target — clicks here

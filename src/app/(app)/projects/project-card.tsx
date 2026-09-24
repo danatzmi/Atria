@@ -1,8 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
-import { ProjectFormDialog } from "./project-form-dialog";
-import { DeleteProjectDialog } from "./delete-project-dialog";
-import { DuplicateProjectDialog } from "./duplicate-project-dialog";
+import { ProjectCardMenu } from "./project-card-menu";
 
 type Project = {
   id: string;
@@ -61,22 +59,20 @@ export function ProjectCard({
         </h3>
       </Link>
 
-      <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-        <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-          <ProjectFormDialog mode="edit" project={project} />
-        </div>
-        <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-          <DuplicateProjectDialog
-            projectId={project.id}
-            projectName={project.name}
-          />
-        </div>
-        <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
-          <DeleteProjectDialog
-            projectId={project.id}
-            projectName={project.name}
-          />
-        </div>
+      {/* One control instead of three. The actions sit on top of the cover
+          photo, and on a touch device they are permanently visible — three
+          buttons covered enough of the image to change what the card is
+          for.
+
+          Hover-to-reveal on a pointer device, always visible without one.
+          The override is keyed on hover CAPABILITY rather than a width
+          breakpoint, because Tailwind v4 already compiles every
+          group-hover: rule inside @media (hover:hover) — so on any touch
+          device the reveal can never fire, and a width-based escape like
+          sm:opacity-0 would simply move the dead zone to tablets, which
+          are touch and wider than sm. */}
+      <div className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100 [@media(hover:none)]:opacity-100">
+        <ProjectCardMenu project={project} />
       </div>
     </div>
   );

@@ -10,28 +10,38 @@ export function DeleteProjectDialog({
   projectId,
   projectName,
   variant = "icon",
+  triggerLabel,
+  triggerClassName,
 }: {
   projectId: string;
   projectName: string;
   variant?: "icon" | "button";
+  // Set both when this is rendered as a row inside a menu rather than as a
+  // standalone control — the caller then owns how the row looks, the same
+  // arrangement FolderFormDialog uses inside AddMenu.
+  triggerLabel?: string;
+  triggerClassName?: string;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [state, formAction, pending] = useActionState(deleteProject, initialState);
 
   return (
     <>
-      <Tooltip label={variant === "icon" ? "Delete project" : undefined}>
+      <Tooltip label={variant === "icon" && !triggerLabel ? "Delete project" : undefined}>
         <button
           type="button"
           onClick={() => dialogRef.current?.showModal()}
           className={
-            variant === "icon"
+            triggerClassName ??
+            (variant === "icon"
               ? "rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-red-50 hover:text-red-600"
-              : "rounded-md px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+              : "rounded-md px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50")
           }
-          aria-label={variant === "icon" ? "Delete project" : undefined}
+          aria-label={variant === "icon" && !triggerLabel ? "Delete project" : undefined}
         >
-          {variant === "icon" ? (
+          {triggerLabel ? (
+            triggerLabel
+          ) : variant === "icon" ? (
             <svg
               xmlns="http://www.w3.org/2000/svg"
               viewBox="0 0 20 20"

@@ -41,9 +41,14 @@ function CopyIcon({ className }: { className?: string }) {
 export function DuplicateProjectDialog({
   projectId,
   projectName,
+  triggerLabel,
+  triggerClassName,
 }: {
   projectId: string;
   projectName: string;
+  // As above: supplied when this is a row in a menu instead of an icon.
+  triggerLabel?: string;
+  triggerClassName?: string;
 }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const router = useRouter();
@@ -82,17 +87,20 @@ export function DuplicateProjectDialog({
 
   return (
     <>
-      <Tooltip label="Duplicate project">
+      <Tooltip label={triggerLabel ? undefined : "Duplicate project"}>
         <button
           type="button"
           onClick={() => {
             dialogRef.current?.showModal();
             setOpen(true);
           }}
-          aria-label="Duplicate project"
-          className="rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+          aria-label={triggerLabel ? undefined : "Duplicate project"}
+          className={
+            triggerClassName ??
+            "rounded-md p-1.5 text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-900"
+          }
         >
-          <CopyIcon className="h-4 w-4" />
+          {triggerLabel ?? <CopyIcon className="h-4 w-4" />}
         </button>
       </Tooltip>
 
