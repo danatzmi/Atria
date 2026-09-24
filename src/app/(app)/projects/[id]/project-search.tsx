@@ -85,7 +85,7 @@ export function ProjectSearch({ projectId }: { projectId: string }) {
         onFocus={() => setOpen(true)}
         placeholder="Search this project"
         aria-label="Search this project"
-        className="block w-full rounded-md border border-zinc-300 px-3 py-1.5 text-sm shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+        className="block w-full rounded-md border border-zinc-300 px-3 py-1.5 text-base sm:text-sm shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
       />
 
       {showPopover && (

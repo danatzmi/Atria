@@ -85,7 +85,7 @@ export function NameForm({ initialName }: { initialName: string }) {
           aria-label="Your name"
           maxLength={80}
           autoFocus
-          className="min-w-0 flex-1 rounded-md border border-zinc-300 px-3 py-1.5 text-sm shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+          className="min-w-0 flex-1 rounded-md border border-zinc-300 px-3 py-1.5 text-base sm:text-sm shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
         />
         <button
           type="submit"

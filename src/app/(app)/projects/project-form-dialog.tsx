@@ -133,7 +133,7 @@ export function ProjectFormDialog(props: ProjectFormDialogProps) {
                     autoFocus
                     defaultValue={props.mode === "edit" ? props.project.name : ""}
                     placeholder="Sarah & David — Wedding"
-                    className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                    className="mt-1 block w-full rounded-md border border-zinc-300 px-3 py-2 text-base sm:text-sm shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
                   />
                 </div>
               )}
@@ -162,7 +162,7 @@ export function ProjectFormDialog(props: ProjectFormDialogProps) {
                         ? "Add an overview, project goals, timeline, or notes about this project."
                         : undefined
                     }
-                    className="mt-1 block w-full resize-none rounded-md border border-zinc-300 px-3 py-2 text-sm shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                    className="mt-1 block w-full resize-none rounded-md border border-zinc-300 px-3 py-2 text-base sm:text-sm shadow-sm focus:border-zinc-500 focus:outline-none focus:ring-1 focus:ring-zinc-500"
                   />
                 </div>
               )}
@@ -181,7 +181,7 @@ export function ProjectFormDialog(props: ProjectFormDialogProps) {
                     name="cover_image"
                     type="file"
                     accept="image/*"
-                    className="mt-1 block w-full text-sm text-zinc-600 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-700 hover:file:bg-zinc-200"
+                    className="mt-1 block w-full text-base sm:text-sm text-zinc-600 file:mr-3 file:rounded-md file:border-0 file:bg-zinc-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-zinc-700 hover:file:bg-zinc-200"
                   />
                 </div>
               )}
