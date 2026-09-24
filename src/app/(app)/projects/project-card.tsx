@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { ProjectFormDialog } from "./project-form-dialog";
 import { DeleteProjectDialog } from "./delete-project-dialog";
+import { DuplicateProjectDialog } from "./duplicate-project-dialog";
 
 type Project = {
   id: string;
@@ -63,6 +64,12 @@ export function ProjectCard({
       <div className="absolute right-2 top-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
         <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
           <ProjectFormDialog mode="edit" project={project} />
+        </div>
+        <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
+          <DuplicateProjectDialog
+            projectId={project.id}
+            projectName={project.name}
+          />
         </div>
         <div className="rounded-md bg-white/90 shadow-sm backdrop-blur-sm">
           <DeleteProjectDialog
