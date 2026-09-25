@@ -202,19 +202,26 @@ export async function updatePassword(
       type: "recovery",
     });
     if (verifyError) {
-      console.error("[atria] recovery verifyOtp failed:", verifyError.message);
-      return {
-        error:
-          "This reset link has expired or was already used. Request a new one from the sign-in page.",
-      };
+      // Noted, NOT returned. A spent token is the expected state on a
+      // second submit: the form re-posts the same token_hash, and the first
+      // attempt already exchanged it for a session. That happens whenever
+      // the first try was rejected for a reason that has nothing to do with
+      // the link — "New password should be different from the old
+      // password", most often. Failing here told someone who had simply
+      // mistyped that their link had expired, and left them with no way
+      // forward but a fresh email. The session check below is what actually
+      // decides, and it is the honest question: is this person
+      // authenticated right now?
+      console.warn("[atria] recovery verifyOtp failed:", verifyError.message);
     }
   }
 
-  // Either verifyOtp just established a session, or one was already in
-  // place — an already-signed-in user changing their password, or a link
-  // from the older flow that was exchanged by the callback route. Both are
-  // still supported, so an email sent before the template change does not
-  // strand anyone.
+  // The real gate. Either verifyOtp just established a session, or one was
+  // already in place — an earlier submit seconds ago, a user who is already
+  // signed in, or a link from the older flow that the callback route
+  // exchanged. Proceeding on an existing session grants nothing extra:
+  // updateUser only ever acts on whoever the session belongs to, so a
+  // forged token cannot reach another account.
   const {
     data: { user },
   } = await supabase.auth.getUser();
