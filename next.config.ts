@@ -44,7 +44,17 @@ function localNetworkHosts(): string[] {
   return [...hosts];
 }
 
-const LAN_HOSTS = localNetworkHosts();
+// Loopback is listed explicitly. localNetworkHosts() skips internal
+// addresses, so 127.0.0.1 was absent — and with allowedDevOrigins set, an
+// origin that is not on the list has its Server Action requests stripped of
+// cookies. The symptom is brutal to diagnose: pages render signed in
+// (Server Components read cookies fine) while every Server Action behaves
+// as though nobody is logged in.
+//
+// It is not a hypothetical origin either: Supabase's local site_url is
+// http://127.0.0.1:3000, so every link in a confirmation or password-reset
+// email lands there.
+const LAN_HOSTS = ["127.0.0.1", "localhost", ...localNetworkHosts()];
 
 const nextConfig: NextConfig = {
   // Next 16 blocks requests for /_next/* dev assets from any origin it

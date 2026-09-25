@@ -1,5 +1,6 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createCheckoutSession } from "@/lib/payments/checkout-action";
@@ -123,4 +124,82 @@ export async function signOut() {
   // Home, not /login — signing out isn't a request to sign back in, and
   // the marketing page is a sensible place to land.
   redirect("/");
+}
+
+// ---------------------------------------------------------------------------
+// Password recovery
+// ---------------------------------------------------------------------------
+
+export async function requestPasswordReset(
+  _prevState: AuthActionState,
+  formData: FormData
+): Promise<AuthActionState> {
+  const email = String(formData.get("email") ?? "").trim();
+  if (!email) return { error: "Enter your email address." };
+
+  // Built from the request's own origin rather than a configured constant,
+  // so the link works from localhost, a LAN IP during phone testing, and
+  // production without a per-environment variable to keep in sync. The
+  // origin must still be on Supabase's redirect allow-list, or it silently
+  // falls back to the project's Site URL.
+  const origin = (await headers()).get("origin");
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${origin}/api/auth/callback?next=/reset-password`,
+  });
+
+  if (error) {
+    console.error("[atria] password reset request failed:", error.message);
+  }
+
+  // The same answer either way, deliberately — including when Supabase
+  // errored. Saying "no account with that email" turns this form into a
+  // membership oracle: anyone could test an address and learn whether that
+  // person uses Atria. The cost is that a typo looks like success, which
+  // the wording below softens by naming the address back to them.
+  return {
+    error: null,
+    notice: `If an account exists for ${email}, a reset link is on its way. Check your inbox — and your spam folder.`,
+  };
+}
+
+export async function updatePassword(
+  _prevState: AuthActionState,
+  formData: FormData
+): Promise<AuthActionState> {
+  const password = String(formData.get("password") ?? "");
+  const confirmation = String(formData.get("confirm_password") ?? "");
+
+  if (password.length < 6) {
+    return { error: "Use at least 6 characters." };
+  }
+  if (password !== confirmation) {
+    return { error: "Those passwords don't match." };
+  }
+
+  const supabase = await createClient();
+
+  // The recovery link is what put a session in place, so its absence means
+  // the link expired, was already used, or this page was opened directly.
+  // Checked explicitly because updateUser's own error for this is about a
+  // missing session, which is not a sentence anyone can act on.
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return {
+      error:
+        "This reset link has expired or was already used. Request a new one from the sign-in page.",
+    };
+  }
+
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) {
+    // Supabase's wording is the useful part — "New password should be
+    // different from the old password" is exactly what the person needs.
+    return { error: error.message };
+  }
+
+  redirect("/projects");
 }

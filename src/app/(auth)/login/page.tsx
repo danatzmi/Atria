@@ -51,12 +51,24 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label
-              htmlFor="password"
-              className="block text-sm font-medium text-zinc-700"
-            >
-              Password
-            </label>
+            {/* Beside the label rather than under the form: this is what
+                someone is looking for at the exact moment the password
+                field disappoints them, so it belongs where their attention
+                already is. */}
+            <div className="flex items-baseline justify-between gap-3">
+              <label
+                htmlFor="password"
+                className="block text-sm font-medium text-zinc-700"
+              >
+                Password
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-sm text-zinc-500 transition-colors hover:text-zinc-900"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <input
               id="password"
               name="password"
