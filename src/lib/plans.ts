@@ -34,7 +34,13 @@ export type Plan = {
 const GB = 1024 * 1024 * 1024;
 const gbLabel = (gb: number) => `${gb} GB`;
 
-export const PLANS: Plan[] = [
+function projectsLabel(limit: number): string {
+  if (limit === Infinity) return "Unlimited projects";
+  return `${limit} project${limit === 1 ? "" : "s"}`;
+}
+
+// Written without `features`, which is derived below.
+const PLAN_DEFS: Omit<Plan, "features">[] = [
   {
     tier: "free",
     name: "Free",
@@ -44,7 +50,6 @@ export const PLANS: Plan[] = [
     projectLimit: 1,
     storageBytes: 1 * GB,
     storageLabel: gbLabel(1),
-    features: ["1 project", "1 GB of storage", "Unlimited tabs and files"],
     cta: "Get started",
     featured: false,
   },
@@ -57,7 +62,6 @@ export const PLANS: Plan[] = [
     projectLimit: 10,
     storageBytes: 20 * GB,
     storageLabel: gbLabel(20),
-    features: ["10 projects", "20 GB of storage", "PDF export", "Priority support"],
     cta: "Choose Basic",
     featured: true,
   },
@@ -70,16 +74,24 @@ export const PLANS: Plan[] = [
     projectLimit: Infinity,
     storageBytes: 100 * GB,
     storageLabel: gbLabel(100),
-    features: [
-      "Unlimited projects",
-      "100 GB of storage",
-      "PDF export",
-      "Priority support",
-    ],
     cta: "Choose Pro",
     featured: false,
   },
 ];
+
+// The feature list is exactly the two limits the server enforces, so it is
+// generated from them rather than written out again. That is the same rule
+// storageLabel follows, and it is now possible only because the list was
+// stripped of everything that was not an enforced limit — "PDF export" had
+// no number behind it to derive from.
+//
+// The drift this prevents is specific and easy to cause: raising
+// projectLimit from 10 to 20 without noticing the string beneath it would
+// leave the pricing page advertising 10 while the backend allowed 20.
+export const PLANS: Plan[] = PLAN_DEFS.map((plan) => ({
+  ...plan,
+  features: [projectsLabel(plan.projectLimit), `${plan.storageLabel} of storage`],
+}));
 
 const BY_TIER = new Map(PLANS.map((p) => [p.tier, p]));
 
