@@ -335,7 +335,7 @@ export async function duplicateProject(
     const used = (allFiles ?? []).reduce((total, f) => total + (f.size_bytes ?? 0), 0);
 
     if (used + incoming > plan.storageBytes) {
-      return { error: storageLimitMessage(plan), atPlanLimit: true };
+      return { error: storageLimitMessage(plan, "duplicate this project"), atPlanLimit: true };
     }
   }
 

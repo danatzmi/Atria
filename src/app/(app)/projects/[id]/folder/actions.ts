@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { getStorageUsed } from "@/lib/storage-usage";
+import { planFor, storageLimitMessage } from "@/lib/plans";
 import {
   createSignedUrl,
   createSignedUrls,
@@ -318,6 +320,24 @@ export async function createFileRecord(input: {
   // thing a caller can actually scroll to.
 }): Promise<{ id?: string; error: string | null }> {
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You need to sign in again." };
+
+  // Checked here, not only in the uploader. A pre-flight call from the
+  // browser is trivially skipped — this action is reachable directly — so
+  // the ceiling has to hold at the point the row is persisted or it is
+  // decoration. The object is already in the bucket by now; returning an
+  // error makes the caller purge it, which uploadOne does.
+  try {
+    const ceiling = await storageCeilingError(supabase, user.id, input.sizeBytes);
+    if (ceiling) return { error: ceiling };
+  } catch (error) {
+    console.error("[atria] createFileRecord storage check failed:", error);
+    return { error: "Couldn't check your storage usage. Please try again." };
+  }
+
   const { data: file, error } = await supabase
     .from("files")
     .insert({
@@ -663,4 +683,59 @@ export async function searchInProject(
 ): Promise<ProjectSearchHit[]> {
   const supabase = await createClient();
   return searchProject(supabase, projectId, query);
+}
+
+// ---------------------------------------------------------------------------
+// Storage ceiling
+// ---------------------------------------------------------------------------
+
+// Would `incomingBytes` more take this workspace past its plan? Returns the
+// message to show, or null when there is room.
+//
+// Shared by the pre-flight check the uploader runs and by createFileRecord
+// itself, so the two can never disagree about where the line is.
+async function storageCeilingError(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  incomingBytes: number
+): Promise<string | null> {
+  const [{ data: profile }, used] = await Promise.all([
+    supabase.from("users").select("plan").eq("id", userId).maybeSingle(),
+    getStorageUsed(supabase),
+  ]);
+
+  // planFor falls back to Free for a missing or unrecognised tier, which is
+  // the restrictive direction to fail in.
+  const plan = planFor(profile?.plan);
+  if (used + incomingBytes > plan.storageBytes) {
+    return storageLimitMessage(plan, "upload those files");
+  }
+  return null;
+}
+
+// Asked before a byte leaves the browser.
+//
+// This is a courtesy, not the enforcement: uploading 400MB only to be told
+// it cannot be kept is a miserable way to learn about a limit, and on a
+// phone it is also someone's data allowance. The real gate is inside
+// createFileRecord, which is the action that actually persists a row and
+// the one a determined caller would have to get past.
+export async function checkUploadAllowed(
+  incomingBytes: number
+): Promise<{ error: string | null }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { error: "You need to sign in again." };
+
+  try {
+    return { error: await storageCeilingError(supabase, user.id, incomingBytes) };
+  } catch (error) {
+    console.error("[atria] checkUploadAllowed failed:", error);
+    // Let the upload proceed. createFileRecord checks again and can still
+    // refuse, so a transient read failure here costs a wasted upload rather
+    // than blocking someone who is well inside their plan.
+    return { error: null };
+  }
 }

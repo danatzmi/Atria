@@ -31,6 +31,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { midpointSortOrder } from "@/lib/sort-order";
 import type { BlockRow, FileRow, FolderRow } from "./data";
 import {
+  checkUploadAllowed,
   createFileRecord,
   getFileDownloadUrl,
   getTabContents,
@@ -163,6 +164,9 @@ export function FolderBrowser({
   const [isLoading, startTransition] = useTransition();
 
   const [queue, setQueue] = useState<UploadItem[]>([]);
+  // A refusal that applies to the whole selection rather than one file, so
+  // it cannot live on a queue row — nothing was queued.
+  const [uploadBlocked, setUploadBlocked] = useState<string | null>(null);
   const [isDraggingFile, setIsDraggingFile] = useState(false);
   const [editing, setEditing] = useState(false);
 
@@ -260,11 +264,25 @@ export function FolderBrowser({
   }
 
   async function uploadFiles(files: FileList | File[], sortOrder?: number) {
+    const chosen = Array.from(files);
+    setUploadBlocked(null);
+
+    // Asked once for the whole selection, before anything is sent. Checking
+    // per file would let the first few through and refuse the rest, leaving
+    // a half-uploaded batch; and uploading first only to delete afterwards
+    // spends the user's bandwidth to tell them something we already knew.
+    const incoming = chosen.reduce((total, f) => total + f.size, 0);
+    const { error: blocked } = await checkUploadAllowed(incoming);
+    if (blocked) {
+      setUploadBlocked(blocked);
+      return;
+    }
+
     // A tiny per-file offset keeps a multi-file drop/selection in its
     // original order without any of them colliding with the neighbor just
     // past this gap.
     const ids = await Promise.all(
-      Array.from(files).map((file, i) =>
+      chosen.map((file, i) =>
         uploadOne(file, sortOrder === undefined ? undefined : sortOrder + i * 1e-6)
       )
     );
@@ -472,6 +490,27 @@ export function FolderBrowser({
 
       {isLoading && (
         <p className="mt-2 text-center text-xs text-stone-400">Refreshing…</p>
+      )}
+
+      {uploadBlocked && (
+        <div className="mt-4 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-3">
+          <p className="text-sm text-stone-700">{uploadBlocked}</p>
+          <div className="mt-2 flex items-center gap-3">
+            <a
+              href="/settings/billing"
+              className="text-sm font-medium text-stone-900 underline underline-offset-2 transition-colors hover:text-stone-600"
+            >
+              See plans
+            </a>
+            <button
+              type="button"
+              onClick={() => setUploadBlocked(null)}
+              className="text-sm text-stone-500 transition-colors hover:text-stone-800"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
       )}
 
       {queue.length > 0 && (

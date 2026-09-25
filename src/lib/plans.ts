@@ -103,12 +103,14 @@ export function planFor(tier: string | null | undefined): Plan {
 
 // The message shown when someone hits their ceiling. Names the plan and
 // says what to do about it, rather than just refusing.
-// Shown when a copy or an upload would take the workspace past its plan's
-// ceiling. Deliberately says how much is free rather than only that it
-// failed — "you need 1.2 GB and have 340 MB" is actionable, "not enough
-// space" is not.
-export function storageLimitMessage(plan: Plan): string {
-  return `You do not have enough storage space to duplicate this project. Your ${plan.name} plan includes ${plan.storageLabel}. Please upgrade.`;
+// Shown when an action would take the workspace past its plan's ceiling.
+//
+// `action` completes "You do not have enough storage space to ___", and is
+// a parameter rather than a fixed phrase because the same ceiling stops
+// two different things: duplicating a project and uploading files. It read
+// "…space to duplicate this project" on an upload until that was caught.
+export function storageLimitMessage(plan: Plan, action: string): string {
+  return `You do not have enough storage space to ${action}. Your ${plan.name} plan includes ${plan.storageLabel}. Please upgrade.`;
 }
 
 export function projectLimitMessage(plan: Plan): string {
