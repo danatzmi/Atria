@@ -4,6 +4,7 @@ import { useActionState } from "react";
 import Link from "next/link";
 import { signIn, type AuthActionState } from "../actions";
 import { BackLink } from "../back-link";
+import { AuthLinkError } from "../auth-link-error";
 
 const initialState: AuthActionState = { error: null };
 
@@ -31,6 +32,9 @@ export default function LoginPage() {
         <p className="mt-1 text-sm text-zinc-500">
           Sign in to your projects.
         </p>
+
+        {/* Why the email link failed, if that is how they got here. */}
+        <AuthLinkError />
 
         <form action={formAction} className="mt-8 space-y-4">
           <div>

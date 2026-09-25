@@ -250,6 +250,19 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
+# The recovery link carries {{ .TokenHash }} straight to /reset-password
+# instead of the default {{ .ConfirmationURL }}, which points at Supabase's
+# /auth/v1/verify and spends the token on the first GET. Mail scanners and
+# link-checkers issue that GET before the recipient ever clicks, so the
+# default template produced "otp_expired" on links that were seconds old.
+# Here nothing is verified until the form is submitted.
+#
+# Local only — the deployed project needs the same change in the Supabase
+# dashboard under Authentication → Email Templates → Reset Password.
+[auth.email.template.recovery]
+subject = "Reset your Atria password"
+content_path = "./supabase/templates/recovery.html"
+
 # Uncomment to customize email template
 # [auth.email.template.invite]
 # subject = "You have been invited"

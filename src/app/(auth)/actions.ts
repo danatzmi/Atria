@@ -1,8 +1,8 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { browserOrigin } from "@/lib/browser-origin";
 import { createCheckoutSession } from "@/lib/payments/checkout-action";
 import type { PaidPlanTier } from "@/lib/payments";
 
@@ -139,10 +139,15 @@ export async function requestPasswordReset(
 
   // Built from the request's own origin rather than a configured constant,
   // so the link works from localhost, a LAN IP during phone testing, and
-  // production without a per-environment variable to keep in sync. The
-  // origin must still be on Supabase's redirect allow-list, or it silently
-  // falls back to the project's Site URL.
-  const origin = (await headers()).get("origin");
+  // production without a per-environment variable to keep in sync.
+  //
+  // The same helper the callback uses, deliberately: if these two ever
+  // disagreed the email would point at one origin and the redirect land on
+  // another, which costs the session silently.
+  //
+  // The result must still be on Supabase's redirect allow-list (Auth → URL
+  // Configuration), or Supabase quietly substitutes the Site URL.
+  const origin = await browserOrigin();
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -180,10 +185,36 @@ export async function updatePassword(
 
   const supabase = await createClient();
 
-  // The recovery link is what put a session in place, so its absence means
-  // the link expired, was already used, or this page was opened directly.
-  // Checked explicitly because updateUser's own error for this is about a
-  // missing session, which is not a sentence anyone can act on.
+  // The token travels in the form, not the URL bar, and is spent HERE — on
+  // submit — rather than when the page was opened.
+  //
+  // That ordering is the whole point. A recovery token is single-use, and
+  // anything that follows the link consumes it: corporate mail scanners,
+  // antivirus link-checkers, and preview fetchers all issue a GET the
+  // moment the mail arrives. With the old flow they burned the token before
+  // the human ever clicked, and the user got "otp_expired" on a link that
+  // was seconds old. A scanner GETting this page now just renders a form.
+  const tokenHash = String(formData.get("token_hash") ?? "");
+
+  if (tokenHash) {
+    const { error: verifyError } = await supabase.auth.verifyOtp({
+      token_hash: tokenHash,
+      type: "recovery",
+    });
+    if (verifyError) {
+      console.error("[atria] recovery verifyOtp failed:", verifyError.message);
+      return {
+        error:
+          "This reset link has expired or was already used. Request a new one from the sign-in page.",
+      };
+    }
+  }
+
+  // Either verifyOtp just established a session, or one was already in
+  // place — an already-signed-in user changing their password, or a link
+  // from the older flow that was exchanged by the callback route. Both are
+  // still supported, so an email sent before the template change does not
+  // strand anyone.
   const {
     data: { user },
   } = await supabase.auth.getUser();

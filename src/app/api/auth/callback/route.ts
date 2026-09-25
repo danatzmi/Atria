@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { browserOrigin } from "@/lib/browser-origin";
 
 // Where the email links land. Supabase sends a one-time `code`; trading it
 // for a session is what actually signs the person in, and it has to happen
@@ -19,28 +20,9 @@ function safeNextPath(raw: string | null): string {
   return raw;
 }
 
-// The origin the BROWSER is on, which is not always the one in
-// request.url: behind a proxy — and on the Next dev server, which reports
-// localhost regardless of what was typed — request.url carries the internal
-// host. Redirecting to that sends the user to a different origin than the
-// one the session cookie was just written for, and the cookie is simply not
-// sent to it. Everything about the flow looks right and the destination
-// page is anonymous.
-//
-// Reached here by landing on 127.0.0.1:3000 and being redirected to
-// localhost:3000 with the session left behind.
-async function browserOrigin(request: Request): Promise<string> {
-  const h = await headers();
-  const host = h.get("x-forwarded-host") ?? h.get("host");
-  if (!host) return new URL(request.url).origin;
-  const proto =
-    h.get("x-forwarded-proto") ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
-  return `${proto}://${host}`;
-}
-
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const origin = await browserOrigin(request);
+  const origin = await browserOrigin(request.url);
   const code = searchParams.get("code");
   const next = safeNextPath(searchParams.get("next"));
 

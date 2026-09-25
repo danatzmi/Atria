@@ -1,16 +1,28 @@
 "use client";
 
-import { useActionState } from "react";
+import { Suspense, useActionState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { updatePassword, type AuthActionState } from "../actions";
 import { BackLink } from "../back-link";
 
 const initialState: AuthActionState = { error: null };
 
-// Reached only through the link in the recovery email, which lands on
-// /api/auth/callback first — that route trades the code for a session, so
-// by the time this renders the person is already authenticated. The action
-// re-checks that server-side rather than trusting the arrival.
+// Carries the recovery token from the URL into the form, so it is spent on
+// submit rather than on page load. useSearchParams opts its subtree into
+// client rendering, so it sits behind its own Suspense boundary — the same
+// arrangement the signup page uses for the plan parameter.
+function TokenField() {
+  const tokenHash = useSearchParams().get("token_hash");
+  if (!tokenHash) return null;
+  return <input type="hidden" name="token_hash" value={tokenHash} />;
+}
+
+// Reached straight from the recovery email. The link carries a token_hash
+// which nothing verifies until the form is submitted — see updatePassword
+// for why that ordering matters. A visit with no token still works for
+// someone who is already signed in, and for links from the older flow that
+// /api/auth/callback exchanged into a session.
 export default function ResetPasswordPage() {
   const [state, formAction, pending] = useActionState(
     updatePassword,
@@ -33,6 +45,10 @@ export default function ResetPasswordPage() {
         <p className="mt-1 text-sm text-zinc-500">Choose a new password.</p>
 
         <form action={formAction} className="mt-8 space-y-4">
+          <Suspense fallback={null}>
+            <TokenField />
+          </Suspense>
+
           <div>
             <label
               htmlFor="password"
