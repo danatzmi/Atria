@@ -1145,9 +1145,11 @@ function DocumentBlockRow({
   async function handleOpen() {
     if (opening) return;
     setOpening(true);
-    const { url } = await getFileDownloadUrl(file!.id);
-    setOpening(false);
-    if (url) window.open(url, "_blank", "noopener,noreferrer");
+    try {
+      await openSignedFileTab(file!.id);
+    } finally {
+      setOpening(false);
+    }
   }
 
   return (
@@ -1168,7 +1170,7 @@ function DocumentBlockRow({
               handleOpen();
             }
           }}
-          className="relative flex aspect-[4/3] w-full flex-col items-center justify-center overflow-hidden rounded-t-lg bg-stone-50/80 transition-colors hover:bg-stone-100/60"
+          className="relative flex aspect-[4/3] w-full touch-manipulation flex-col items-center justify-center overflow-hidden rounded-t-lg bg-stone-50/80 transition-colors hover:bg-stone-100/60"
         >
           <span className="absolute left-2.5 top-2.5 rounded bg-stone-900/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white">
             {getFormatLabel(file.mime_type, file.name)}
@@ -1215,7 +1217,7 @@ function DocumentBlockRow({
               handleOpen();
             }
           }}
-          className="border-t border-stone-100 px-3 py-2.5 text-left"
+          className="touch-manipulation border-t border-stone-100 px-3 py-2.5 text-left"
         >
           <p className="truncate text-sm font-medium text-stone-900" title={file.name}>
             {file.name}
@@ -1247,6 +1249,40 @@ function DocumentBlockRow({
 }
 
 // Fetches a signed URL on demand (not eagerly) and opens it in a new tab.
+// Opens a stored file in a new tab.
+//
+// The tab is opened SYNCHRONOUSLY, before the signed URL is fetched, and
+// pointed at the URL once it arrives. That ordering is the whole function.
+// iOS Safari only allows window.open from inside a user gesture, and an
+// `await` ends the gesture — so calling it after the fetch is silently
+// blocked and the tap appears to do nothing. Opening first keeps the call
+// inside the gesture; the empty tab is then navigated, which is not
+// gesture-gated.
+//
+// `noopener` cannot be passed: with it window.open returns null and there
+// is no handle left to navigate. Clearing `opener` by hand gives the same
+// protection against the opened page reaching back through window.opener.
+async function openSignedFileTab(fileId: string): Promise<void> {
+  const tab = window.open("", "_blank");
+  if (tab) tab.opener = null;
+
+  const { url } = await getFileDownloadUrl(fileId);
+
+  if (!url) {
+    tab?.close();
+    return;
+  }
+  if (tab) {
+    // replace, so the blank placeholder does not sit in that tab's history
+    // and strand the user on about:blank if they press back.
+    tab.location.replace(url);
+  } else {
+    // Blocked anyway (an aggressive blocker, or a webview that refuses
+    // popups outright). Better to leave for the file than do nothing.
+    window.location.href = url;
+  }
+}
+
 export function FileOpenButton({
   fileId,
   className,
@@ -1260,13 +1296,23 @@ export function FileOpenButton({
 
   async function open() {
     setOpening(true);
-    const { url } = await getFileDownloadUrl(fileId);
-    setOpening(false);
-    if (url) window.open(url, "_blank", "noopener,noreferrer");
+    try {
+      await openSignedFileTab(fileId);
+    } finally {
+      setOpening(false);
+    }
   }
 
   return (
-    <button type="button" onClick={open} disabled={opening} className={className}>
+    // touch-manipulation removes the ~300ms iOS waits to see whether a tap
+    // is the start of a double-tap zoom. On a card this size that delay
+    // reads as the first tap being ignored.
+    <button
+      type="button"
+      onClick={open}
+      disabled={opening}
+      className={`touch-manipulation ${className ?? ""}`}
+    >
       {children}
     </button>
   );
