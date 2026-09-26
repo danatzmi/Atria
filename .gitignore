@@ -71,4 +71,8 @@ lerna-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Private files
 lemosqueezy.txt
+tmp.txt
+INSTRUCTIONS.md
