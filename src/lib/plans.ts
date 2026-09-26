@@ -113,6 +113,23 @@ export function storageLimitMessage(plan: Plan, action: string): string {
   return `You do not have enough storage space to ${action}. Your ${plan.name} plan includes ${plan.storageLabel}. Please upgrade.`;
 }
 
+// Is this workspace already at its project ceiling?
+//
+// Split out and shared by createProject and duplicateProject, which both
+// had the same comparison written inline — two copies of a rule is how one
+// of them ends up a `>` while the other stays a `>=`.
+//
+// Note the boundary differs from the storage one, and correctly so. This
+// asks "do they ALREADY hold the maximum", so a Free plan with its one
+// project is at the limit and may not create another. Storage asks whether
+// the result would exceed the ceiling, so filling it exactly is fine.
+//
+// Infinity handles the unlimited tier without a special case: no count is
+// ever >= Infinity.
+export function exceedsProjectLimit(plan: Plan, currentProjectCount: number): boolean {
+  return currentProjectCount >= plan.projectLimit;
+}
+
 export function projectLimitMessage(plan: Plan): string {
   return `You've reached the ${plan.projectLimit}-project limit on the ${plan.name} plan. Upgrade to create more.`;
 }

@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { planFor, projectLimitMessage, storageLimitMessage } from "@/lib/plans";
+import {
+  exceedsProjectLimit,
+  planFor,
+  projectLimitMessage,
+  storageLimitMessage,
+} from "@/lib/plans";
 import { buildStorageKey, PROJECT_FILES_BUCKET } from "@/lib/supabase/storage";
 
 export type ProjectActionState = {
@@ -82,7 +87,7 @@ export async function createProject(
   ]);
 
   const plan = planFor(profile?.plan);
-  if ((projectCount ?? 0) >= plan.projectLimit) {
+  if (exceedsProjectLimit(plan, projectCount ?? 0)) {
     return { error: projectLimitMessage(plan), atPlanLimit: true };
   }
 
@@ -316,7 +321,7 @@ export async function duplicateProject(
   // Both ceilings are checked before a single byte is copied. Copying first
   // and checking after would leave the objects in the bucket counting
   // against a limit the user was just told they had exceeded.
-  if ((projectCount ?? 0) >= plan.projectLimit) {
+  if (exceedsProjectLimit(plan, projectCount ?? 0)) {
     return { error: projectLimitMessage(plan), atPlanLimit: true };
   }
 

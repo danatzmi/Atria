@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Plan } from "@/lib/plans";
 
 // Total bytes this user's files occupy, across every project they own.
 //
@@ -22,4 +23,18 @@ export async function getStorageUsed(supabase: SupabaseClient): Promise<number> 
   }
 
   return (data ?? []).reduce((total, f) => total + (f.size_bytes ?? 0), 0);
+}
+
+// Would storing `incomingBytes` more take this workspace past its plan?
+//
+// Split out from the action that calls it so the decision is testable
+// without a database, a session, or a plan row. It is the whole rule: two
+// numbers and a ceiling, with the boundary spelled out — landing exactly ON
+// the limit is allowed, only exceeding it is not.
+export function exceedsStorageLimit(
+  plan: Plan,
+  usedBytes: number,
+  incomingBytes: number
+): boolean {
+  return usedBytes + incomingBytes > plan.storageBytes;
 }

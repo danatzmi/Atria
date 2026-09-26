@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { getStorageUsed } from "@/lib/storage-usage";
+import { exceedsStorageLimit, getStorageUsed } from "@/lib/storage-usage";
 import { planFor, storageLimitMessage } from "@/lib/plans";
 import {
   createSignedUrl,
@@ -707,7 +707,7 @@ async function storageCeilingError(
   // planFor falls back to Free for a missing or unrecognised tier, which is
   // the restrictive direction to fail in.
   const plan = planFor(profile?.plan);
-  if (used + incomingBytes > plan.storageBytes) {
+  if (exceedsStorageLimit(plan, used, incomingBytes)) {
     return storageLimitMessage(plan, "upload those files");
   }
   return null;
