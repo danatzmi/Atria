@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Atria. A pure vector 'A' — no <text>, so nothing depends on which
+       fonts the renderer happens to have. An SVG favicon is rasterised in
+       contexts that do not always resolve font stacks (Android home-screen
+       icons, some PWA install flows), and there the text version could
+       come out as an empty black tile.
+
+       The outline is Geist Bold, the typeface the app itself is set in,
+       instantiated from its variable axis at wght=700 and transformed into
+       this 64x64 box: cap height 48.8% of the tile, ink centred on
+       (32, 32). Geist is SIL OFL, and already ships with the app.
+
+       Two contours — the letter and its counter — in opposite directions,
+       so the default nonzero fill rule punches the triangle out. -->
+  <rect width="64" height="64" rx="12" fill="#09090b" />
+  <path d="M16.78 47.62 28.04 16.38H35.96L47.22 47.62H40.29L37.99 40.97H25.99L23.68 47.62ZM27.87 35.48H36.13L32.01 23.4Z" fill="#ffffff" />
+</svg>
