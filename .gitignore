@@ -74,5 +74,6 @@ lerna-debug.log*
 
 # Private files
 lemosqueezy.txt
+vercel.txt
 tmp.txt
 INSTRUCTIONS.md
